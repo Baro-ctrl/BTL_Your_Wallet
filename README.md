@@ -1,17 +1,1 @@
-# chi_tieu
-
-A new Flutter project.
-
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Giao diện ứng dụng quản lí chi tiêu Link figma: https://www.figma.com/design/QEtNsFrLRx8mHoXft177r8/%E1%BB%A8ng-d%E1%BB%A5ng-Qu%E1%BA%A3n-L%C3%AD-Chi-Ti%C3%AAu?node-id=1-4&t=ZqDZqEQo8EK8HarE-1
