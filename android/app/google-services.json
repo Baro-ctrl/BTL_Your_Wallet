@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "554668924144",
+    "project_id": "your-wallet-f797a",
+    "storage_bucket": "your-wallet-f797a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:554668924144:android:c51d46c23ccfe3e30ef635",
+        "android_client_info": {
+          "package_name": "com.example.chi_tieu"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "554668924144-lgcs2tiajhmq3ubmhleh2809hbgo20af.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaNpjjvT0okjp2ncAP8-tgQSod2tB1hRQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "554668924144-lgcs2tiajhmq3ubmhleh2809hbgo20af.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
