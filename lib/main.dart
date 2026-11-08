@@ -1,10 +1,11 @@
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'app/app_router.dart';
 import 'theme/app_theme.dart';
+import 'providers/expense_provider.dart';
 
 // ==========================================
 // 1. KHỞI ĐỘNG ỨNG DỤNG
@@ -42,26 +43,31 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      // Tắt chữ DEBUG.
-      debugShowCheckedModeBanner: false,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ExpenseProvider()),
+      ],
+      child: MaterialApp.router(
+        // Tắt chữ DEBUG.
+        debugShowCheckedModeBanner: false,
 
-      // Tên ứng dụng.
-      title: 'Your Wallet',
+        // Tên ứng dụng.
+        title: 'Your Wallet',
 
-      // Giao diện sáng theo Figma.
-      theme: AppTheme.lightTheme,
+        // Giao diện sáng theo Figma.
+        theme: AppTheme.lightTheme,
 
-      // Không tự đổi sang giao diện tối.
-      themeMode: ThemeMode.light,
+        // Không tự đổi sang giao diện tối.
+        themeMode: ThemeMode.light,
 
-      // Cấu hình toàn bộ đường dẫn.
-      routerConfig: AppRouter.router,
+        // Cấu hình toàn bộ đường dẫn.
+        routerConfig: AppRouter.router,
 
-      // Tránh xuất hiện nhãn debug.
-      builder: (context, child) {
-        return child ?? const SizedBox.shrink();
-      },
+        // Tránh xuất hiện nhãn debug.
+        builder: (context, child) {
+          return child ?? const SizedBox.shrink();
+        },
+      ),
     );
   }
 }
@@ -88,8 +94,7 @@ class FirebaseErrorApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF4096F5),
         ),
-        scaffoldBackgroundColor:
-        const Color(0xFFF4F8FF),
+        scaffoldBackgroundColor: const Color(0xFFF4F8FF),
       ),
       home: Scaffold(
         appBar: AppBar(
@@ -101,8 +106,7 @@ class FirebaseErrorApp extends StatelessWidget {
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
-                constraints:
-                const BoxConstraints(maxWidth: 430),
+                constraints: const BoxConstraints(maxWidth: 430),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -112,8 +116,7 @@ class FirebaseErrorApp extends StatelessWidget {
                       height: 96,
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFEBEE),
-                        borderRadius:
-                        BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                       child: const Icon(
                         Icons.cloud_off_rounded,
@@ -137,8 +140,8 @@ class FirebaseErrorApp extends StatelessWidget {
 
                     const Text(
                       'Ứng dụng chưa khởi tạo được Firebase. '
-                          'Vui lòng kiểm tra cấu hình Firebase '
-                          'và kết nối mạng.',
+                      'Vui lòng kiểm tra cấu hình Firebase '
+                      'và kết nối mạng.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -155,8 +158,7 @@ class FirebaseErrorApp extends StatelessWidget {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius:
-                        BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: const Color(0xFFE0E6EF),
                         ),
@@ -184,8 +186,7 @@ class FirebaseErrorApp extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     const Text(
-                      'Your Wallet - Quản lý chi tiêu '
-                          'thông minh',
+                      'Your Wallet - Quản lý chi tiêu thông minh',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,

@@ -1,13 +1,14 @@
-
 class TransactionModel {
   final String id;
   final String userId;
   final String categoryId;
   final String walletId;
-  final int amount;
-  final String type;
+  final int amount; // Số nguyên (đồng) theo đúng thiết kế của A
+  final String type; // 'expense' hoặc 'income'
   final String note;
   final DateTime date;
+  final String?
+  imagePath; // Thêm trường này cho tính năng ảnh khoảnh khắc của B
 
   TransactionModel({
     required this.id,
@@ -18,12 +19,11 @@ class TransactionModel {
     required this.type,
     required this.note,
     required this.date,
+    this.imagePath,
   });
 
   // Chuyển dữ liệu từ Firestore thành đối tượng Dart
-  factory TransactionModel.fromMap(
-    Map<String, dynamic> map,
-  ) {
+  factory TransactionModel.fromMap(Map<String, dynamic> map) {
     return TransactionModel(
       id: map['id'] as String,
       userId: map['userId'] as String,
@@ -33,6 +33,7 @@ class TransactionModel {
       type: map['type'] as String,
       note: map['note'] as String,
       date: DateTime.parse(map['date'] as String),
+      imagePath: map['imagePath'] as String?,
     );
   }
 
@@ -47,6 +48,7 @@ class TransactionModel {
       'type': type,
       'note': note,
       'date': date.toIso8601String(),
+      'imagePath': imagePath,
     };
   }
 }

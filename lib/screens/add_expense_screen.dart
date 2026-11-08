@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 
 import '../app/app_router.dart';
 import '../services/auth_service.dart';
@@ -20,12 +25,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final TextEditingController _amountController = TextEditingController();
-
   final TextEditingController _noteController = TextEditingController();
 
   String _type = 'expense';
   String? _selectedCategoryId;
   String? _selectedWalletId;
+  String? _imagePath;
 
   DateTime _selectedDate = DateTime.now();
 
@@ -36,6 +41,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _wallets = [];
+
+  final ImagePicker _picker = ImagePicker();
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -52,26 +59,40 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     super.dispose();
   }
 
-  // =========================================
-  // 1. HỖ TRỢ CHUYỂN ĐỔI DỮ LIỆU
-  // =========================================
+  // Chụp / chọn và lưu ảnh local
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        imageQuality: 70,
+      );
+
+      if (pickedFile != null) {
+        final appDir = await getApplicationDocumentsDirectory();
+        final fileName =
+            '${DateTime.now().millisecondsSinceEpoch}${path.extension(pickedFile.path)}';
+        final savedImage = await File(pickedFile.path)
+            .copy('${appDir.path}/$fileName');
+
+        setState(() {
+          _imagePath = savedImage.path;
+        });
+      }
+    } catch (e) {
+      debugPrint('[ADD_TRANSACTION] Image pick error: $e');
+      _showMessage('Không thể chọn ảnh: $e');
+    }
+  }
 
   int _readAmount(dynamic value) {
-    if (value is num) {
-      return value.toInt();
-    }
-
-    if (value is String) {
-      return int.tryParse(value) ?? 0;
-    }
-
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
     return 0;
   }
 
   String _formatMoney(int amount) {
     final negative = amount < 0;
     final text = amount.abs().toString();
-
     final buffer = StringBuffer();
 
     for (int i = 0; i < text.length; i++) {
@@ -87,21 +108,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   String _formatDate(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
-
     return '$day/$month/${date.year}';
   }
 
   void _showMessage(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
-
-  // =========================================
-  // 2. LẤY DANH MỤC VÀ VÍ TỪ FIRESTORE
-  // =========================================
 
   Future<void> _loadData() async {
     if (!mounted) return;
@@ -113,13 +128,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
     try {
       final user = _user;
-
       if (user == null) {
         throw StateError('Bạn chưa đăng nhập.');
       }
 
-      // Tạo ví và danh mục mặc định nếu chưa có.
-      // DefaultDataService phải bảo vệ dữ liệu đã tồn tại.
       await AuthService().retryDefaultData();
 
       final userRef = _firestore.collection('users').doc(user.uid);
@@ -208,10 +220,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     });
   }
 
-  // =========================================
-  // 3. CHỌN NGÀY
-  // =========================================
-
   Future<void> _pickDate() async {
     if (_saving) return;
 
@@ -232,15 +240,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     }
   }
 
-  // =========================================
-  // 4. LƯU GIAO DỊCH VÀ CẬP NHẬT SỐ DƯ
-  // =========================================
-
   Future<void> _saveTransaction() async {
     if (_saving || _loading) return;
 
     final user = _user;
-
     if (user == null) {
       _showMessage('Bạn cần đăng nhập trước.');
       return;
@@ -288,21 +291,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
     try {
       final userRef = _firestore.collection('users').doc(user.uid);
-
       final walletRef = userRef.collection('wallets').doc(_selectedWalletId!);
-
       final transactionRef = userRef.collection('transactions').doc();
 
       final categoryId = _selectedCategoryId!;
       final categoryName = selectedCategory.first['name']?.toString() ?? 'Khác';
-
       final walletId = _selectedWalletId!;
       final note = _noteController.text.trim();
-
       final delta = _type == 'income' ? amount : -amount;
 
-      // Firestore Transaction:
-      // Tạo giao dịch và thay đổi số dư cùng lúc.
       await _firestore.runTransaction((transaction) async {
         final walletSnapshot = await transaction.get(walletRef);
 
@@ -317,7 +314,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         }
 
         final oldBalance = _readAmount(walletData['balance']);
-
         final newBalance = oldBalance + delta;
 
         transaction.set(transactionRef, {
@@ -330,44 +326,21 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           'walletId': walletId,
           'note': note,
           'date': Timestamp.fromDate(_selectedDate),
+          'imagePath': _imagePath,
           'createdAt': FieldValue.serverTimestamp(),
         });
 
         transaction.update(walletRef, {'balance': newBalance});
       });
 
-      debugPrint(
-        '[ADD_TRANSACTION] Saved: '
-        '${transactionRef.id}, amount=$amount, type=$_type',
-      );
-
       if (!mounted) return;
 
       _showMessage('Đã lưu giao dịch thành công!');
-
-      // Về Home để xem số dư đã thay đổi.
       context.go(AppRouter.home);
     } on FirebaseException catch (error) {
-      debugPrint(
-        '[ADD_TRANSACTION] Firebase error: '
-        '${error.code} - ${error.message}',
-      );
-
       if (!mounted) return;
-
-      if (error.code == 'permission-denied') {
-        _showMessage(
-          'Firestore từ chối quyền ghi. '
-          'Vui lòng kiểm tra Rules.',
-        );
-      } else {
-        _showMessage(
-          'Không lưu được giao dịch: ${error.message ?? error.code}',
-        );
-      }
+      _showMessage('Không lưu được giao dịch: ${error.message ?? error.code}');
     } catch (error) {
-      debugPrint('[ADD_TRANSACTION] Save error: $error');
-
       _showMessage('Không thể lưu giao dịch: $error');
     } finally {
       if (mounted) {
@@ -377,10 +350,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       }
     }
   }
-
-  // =========================================
-  // 5. NÚT CHỌN THU / CHI
-  // =========================================
 
   Widget _typeChip({required String text, required String type}) {
     final active = _type == type;
@@ -406,10 +375,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       ),
     );
   }
-
-  // =========================================
-  // 6. GIAO DIỆN NHẬP LIỆU
-  // =========================================
 
   InputDecoration _inputDecoration({
     required String hint,
@@ -450,7 +415,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // CHỌN THU NHẬP HOẶC CHI TIÊU
           Row(
             children: [
               Expanded(
@@ -462,10 +426,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 18),
-
-          // SỐ TIỀN
           TextField(
             controller: _amountController,
             enabled: !_saving,
@@ -476,10 +437,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               icon: Icons.payments_outlined,
             ),
           ),
-
           const SizedBox(height: 14),
-
-          // GHI CHÚ
           TextField(
             controller: _noteController,
             enabled: !_saving,
@@ -490,10 +448,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               icon: Icons.edit_note,
             ),
           ),
-
           const SizedBox(height: 14),
-
-          // DANH MỤC
           DropdownButtonFormField<String>(
             key: ValueKey('category_$_type'),
             initialValue: _selectedCategoryId,
@@ -519,7 +474,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     });
                   },
           ),
-
           if (categories.isEmpty) ...[
             const SizedBox(height: 8),
             const Text(
@@ -527,10 +481,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               style: TextStyle(color: Colors.redAccent, fontSize: 12),
             ),
           ],
-
           const SizedBox(height: 14),
-
-          // VÍ
           DropdownButtonFormField<String>(
             initialValue: _selectedWalletId,
             isExpanded: true,
@@ -540,7 +491,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             ),
             items: _wallets.map((wallet) {
               final balance = _readAmount(wallet['balance']);
-
               final name = wallet['name']?.toString() ?? 'Ví';
 
               return DropdownMenuItem<String>(
@@ -559,10 +509,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     });
                   },
           ),
-
           const SizedBox(height: 14),
-
-          // NGÀY GIAO DỊCH
           InkWell(
             onTap: _pickDate,
             borderRadius: BorderRadius.circular(14),
@@ -580,10 +527,102 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               ),
             ),
           ),
-
+          const SizedBox(height: 18),
+          const Text(
+            'Ảnh khoảnh khắc',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _imagePath == null
+              ? Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Chụp món bạn vừa chi tiêu',
+                        style: TextStyle(color: Colors.black45, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () => _pickImage(ImageSource.camera),
+                            icon: const Icon(Icons.camera_alt, size: 18),
+                            label: const Text('Máy ảnh'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () => _pickImage(ImageSource.gallery),
+                            icon: const Icon(Icons.photo_library, size: 18),
+                            label: const Text('Thư viện'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                )
+              : Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(
+                        File(_imagePath!),
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black54,
+                        radius: 18,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _imagePath = null),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
           const SizedBox(height: 22),
-
-          // NÚT LƯU
           SizedBox(
             height: 52,
             child: ElevatedButton(
@@ -618,17 +657,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     );
   }
 
-  // =========================================
-  // 7. GIAO DIỆN CHÍNH
-  // =========================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-
       appBar: AppBar(title: const Text('Thêm giao dịch')),
-
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -671,27 +704,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               : _buildForm(),
         ),
       ),
-
       bottomNavigationBar: AppBottomNav(
         currentIndex: 1,
         onTap: (index) {
           if (_saving) return;
 
-          if (index == 0) {
-            context.go(AppRouter.home);
-          }
-
-          if (index == 1) {
-            context.go(AppRouter.addExpense);
-          }
-
-          if (index == 2) {
-            context.go(AppRouter.notifications);
-          }
-
-          if (index == 3) {
-            context.go(AppRouter.profile);
-          }
+          if (index == 0) context.go(AppRouter.home);
+          if (index == 1) context.go(AppRouter.addExpense);
+          if (index == 2) context.go(AppRouter.notifications);
+          if (index == 3) context.go(AppRouter.profile);
         },
       ),
     );
