@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -301,11 +303,64 @@ class HomeScreen extends StatelessWidget {
     int expense,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final userName = currentUser?.displayName ??
+        currentUser?.email?.split('@').first ??
+        'Bạn';
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    int todayExpense = 0;
+    final todayMoments = <Map<String, dynamic>>[];
+
+    for (final doc in transactions) {
+      final data = doc.data();
+      final date = _toDate(data['date']);
+      final transactionDay = DateTime(date.year, date.month, date.day);
+      final amount = _toAmount(data['amount']);
+
+      if (transactionDay == today) {
+        if (data['type'] == 'expense') {
+          todayExpense += amount;
+        }
+
+        final imagePath = data['imagePath']?.toString().trim();
+        if (imagePath != null && imagePath.isNotEmpty) {
+          todayMoments.add({
+            'id': doc.id,
+            'imagePath': imagePath,
+            'category': _categoryName(data),
+            'amount': amount,
+          });
+        }
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppColors.bg,
 
       appBar: AppBar(
-        title: const Text('Your Wallet'),
+        title: Row(
+          children: [
+            const CircleAvatar(
+              radius: 16,
+              backgroundColor: AppColors.primary,
+              child: Icon(Icons.person, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Xin chào, $userName! 👋',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'Thông báo',
@@ -323,6 +378,193 @@ class HomeScreen extends StatelessWidget {
           children: [
             // THẺ TỔNG SỐ DƯ
             _balanceCard(walletBalance, income, expense),
+
+            const SizedBox(height: 16),
+
+            // DÒNG TỔNG CHI HÔM NAY
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.today, color: AppColors.expense, size: 22),
+                      SizedBox(width: 8),
+                      Text(
+                        'Tổng chi hôm nay',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    formatVnd(todayExpense),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.expense,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // KHOẢNH KHẮC HÔM NAY (ẢNH DẢI NGANG)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Khoảnh khắc hôm nay 📸',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                TextButton.icon(
+                  onPressed: () => context.push(AppRouter.addExpense),
+                  icon: const Icon(Icons.add_a_photo, size: 16),
+                  label: const Text('Thêm ảnh'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            SizedBox(
+              height: 90,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  // Nút + thêm giao dịch mới
+                  InkWell(
+                    onTap: () => context.push(AppRouter.addExpense),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 80,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_circle_outline,
+                            color: AppColors.primary,
+                            size: 28,
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Thêm ảnh',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  if (todayMoments.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Text(
+                        'Chưa có ảnh chi tiêu hôm nay',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    )
+                  else
+                    ...todayMoments.map((moment) {
+                      final imageFile = File(moment['imagePath'] as String);
+                      final exists = imageFile.existsSync();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: InkWell(
+                          onTap: () {
+                            context.push(
+                              AppRouter.transactionDetailPath(
+                                moment['id'] as String,
+                              ),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Stack(
+                              children: [
+                                Container(
+                                  width: 85,
+                                  height: 90,
+                                  color: Colors.grey.shade200,
+                                  child: exists
+                                      ? Image.file(
+                                          imageFile,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : const Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey,
+                                        ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    color: Colors.black54,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 2,
+                                      horizontal: 4,
+                                    ),
+                                    child: Text(
+                                      moment['category'] as String,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 24),
 

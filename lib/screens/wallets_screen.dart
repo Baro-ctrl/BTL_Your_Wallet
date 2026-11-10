@@ -312,7 +312,80 @@ class _WalletsScreenState extends State<WalletsScreen> {
   }
 
   // ==========================================
-  // 6. MENU QUẢN LÝ TỪNG VÍ
+  // 6. XÓA VÍ
+  // ==========================================
+
+  Future<void> _deleteWallet(
+    QueryDocumentSnapshot<Map<String, dynamic>> wallet,
+  ) async {
+    if (_busy || _uid == null) return;
+
+    final walletsRef = _walletsRef!;
+    final query = await walletsRef.get();
+
+    if (query.docs.length <= 1) {
+      _showMessage('Bạn cần giữ lại ít nhất 1 ví trong tài khoản.');
+      return;
+    }
+
+    final data = wallet.data();
+    final name = data['name']?.toString() ?? 'ví này';
+    final isDefault = data['isDefault'] == true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Xóa "$name"?'),
+          content: const Text(
+            'Ví này sẽ bị xóa vĩnh viễn khỏi danh sách của bạn. Bạn có chắc chắn không?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.expense),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xóa ví'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _busy = true;
+    });
+
+    try {
+      await wallet.reference.delete();
+
+      // Nếu xóa ví mặc định thì đặt ví đầu tiên còn lại làm mặc định
+      if (isDefault) {
+        final remaining = await walletsRef.get();
+        if (remaining.docs.isNotEmpty) {
+          await remaining.docs.first.reference.update({'isDefault': true});
+        }
+      }
+
+      _showMessage('Đã xóa ví "$name" thành công.');
+    } catch (error) {
+      _showMessage('Không thể xóa ví: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================
+  // 7. MENU QUẢN LÝ TỪNG VÍ
   // ==========================================
 
   Future<void> _showWalletOptions(
@@ -353,6 +426,13 @@ class _WalletsScreenState extends State<WalletsScreen> {
                     },
                   ),
                 ListTile(
+                  leading: const Icon(Icons.delete_outline, color: AppColors.expense),
+                  title: const Text('Xóa ví', style: TextStyle(color: AppColors.expense)),
+                  onTap: () {
+                    Navigator.pop(sheetContext, 'delete');
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.close),
                   title: const Text('Đóng'),
                   onTap: () {
@@ -372,6 +452,8 @@ class _WalletsScreenState extends State<WalletsScreen> {
       await _editWallet(wallet);
     } else if (action == 'default') {
       await _setDefaultWallet(wallet.id);
+    } else if (action == 'delete') {
+      await _deleteWallet(wallet);
     }
   }
 
