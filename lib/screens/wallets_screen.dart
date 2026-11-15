@@ -453,8 +453,14 @@ class _WalletsScreenState extends State<WalletsScreen> {
                     },
                   ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.expense),
-                  title: const Text('Xóa ví', style: TextStyle(color: AppColors.expense)),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.expense,
+                  ),
+                  title: const Text(
+                    'Xóa ví',
+                    style: TextStyle(color: AppColors.expense),
+                  ),
                   onTap: () {
                     Navigator.pop(sheetContext, 'delete');
                   },

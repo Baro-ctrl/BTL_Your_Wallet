@@ -8,10 +8,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
 import '../app/app_router.dart';
+import '../providers/transaction_provider.dart';
+import '../services/moment_image_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/finance_ui.dart';
+import '../widgets/moment_image.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   final String transactionId;
@@ -25,6 +29,7 @@ class TransactionDetailScreen extends StatefulWidget {
 
 class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final MomentImageService _momentImages = MomentImageService();
 
   bool _busy = false;
 
@@ -137,6 +142,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   Future<void> _editTransaction(Map<String, dynamic> original) async {
     if (_busy || _uid == null) return;
 
+    String? uploadedImageUrl;
+    var transactionSaved = false;
+
     setState(() {
       _busy = true;
     });
@@ -176,12 +184,43 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
       if (!mounted || changed == null) return;
 
+      final oldImagePath = original['imagePath']?.toString();
+      var newImagePath = changed['imagePath']?.toString();
+
+      if (newImagePath != null &&
+          !MomentImageService.isRemoteUrl(newImagePath)) {
+        uploadedImageUrl = await _momentImages.upload(
+          userId: _uid!,
+          transactionId: widget.transactionId,
+          localPath: newImagePath,
+        );
+        newImagePath = uploadedImageUrl;
+        changed['imagePath'] = newImagePath;
+      }
+
       await _saveEditedTransaction(changed);
+      transactionSaved = true;
+
+      try {
+        await _momentImages.deleteIfReplaced(
+          oldImageUrl: oldImagePath,
+          newImageUrl: newImagePath,
+        );
+      } on FirebaseException catch (error) {
+        _showMessage(
+          'Đã lưu giao dịch nhưng chưa xóa được ảnh cũ: '
+          '${error.message ?? error.code}',
+        );
+      } catch (error) {
+        _showMessage('Đã lưu giao dịch nhưng chưa xóa được ảnh cũ: $error');
+      }
 
       _showMessage('Đã cập nhật giao dịch và số dư ví.');
     } on FirebaseException catch (error) {
+      if (!transactionSaved) await _cleanupUploadedImage(uploadedImageUrl);
       _showMessage('Lỗi Firebase: ${error.message ?? error.code}');
     } catch (error) {
+      if (!transactionSaved) await _cleanupUploadedImage(uploadedImageUrl);
       _showMessage('Không thể chỉnh sửa: $error');
     } finally {
       if (mounted) {
@@ -192,101 +231,32 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
   }
 
+  Future<void> _cleanupUploadedImage(String? imageUrl) async {
+    try {
+      await _momentImages.deleteImage(imageUrl);
+    } on FirebaseException catch (error) {
+      _showMessage(
+        'Không thể xóa ảnh tải lên chưa được lưu: '
+        '${error.message ?? error.code}',
+      );
+    }
+  }
+
   // ==========================================
   // 2. LƯU CHỈNH SỬA VÀ CẬP NHẬT SỐ DƯ
   // ==========================================
 
   Future<void> _saveEditedTransaction(Map<String, dynamic> changed) async {
-    final transactionRef = _transactionRef;
-
-    if (transactionRef == null) {
+    final uid = _uid;
+    if (uid == null) {
       throw StateError('Bạn chưa đăng nhập.');
     }
 
-    await _db.runTransaction((tx) async {
-      // Đọc giao dịch mới nhất trên Firestore.
-      final oldSnapshot = await tx.get(transactionRef);
-
-      if (!oldSnapshot.exists) {
-        throw StateError('Giao dịch không còn tồn tại.');
-      }
-
-      final old = oldSnapshot.data()!;
-
-      if (old['userId'] != _uid) {
-        throw StateError('Giao dịch không hợp lệ.');
-      }
-
-      final oldWalletId = old['walletId']?.toString();
-      final newWalletId = changed['walletId'] as String;
-
-      if (oldWalletId == null || oldWalletId.isEmpty) {
-        throw StateError('Giao dịch cũ không có thông tin ví.');
-      }
-
-      final oldWalletRef = _collection('wallets').doc(oldWalletId);
-
-      final newWalletRef = _collection('wallets').doc(newWalletId);
-
-      // Firestore yêu cầu đọc trước khi ghi.
-      final oldWalletSnapshot = await tx.get(oldWalletRef);
-
-      final newWalletSnapshot = oldWalletId == newWalletId
-          ? oldWalletSnapshot
-          : await tx.get(newWalletRef);
-
-      if (!oldWalletSnapshot.exists || !newWalletSnapshot.exists) {
-        throw StateError('Không tìm thấy ví.');
-      }
-
-      if (oldWalletSnapshot.data()?['userId'] != _uid ||
-          newWalletSnapshot.data()?['userId'] != _uid) {
-        throw StateError('Ví không thuộc tài khoản.');
-      }
-
-      final oldAmount = _amount(old['amount']);
-      final newAmount = changed['amount'] as int;
-
-      if (oldAmount <= 0 || newAmount <= 0) {
-        throw StateError('Số tiền không hợp lệ.');
-      }
-
-      final oldType = old['type'];
-      final newType = changed['type'];
-
-      if ((oldType != 'income' && oldType != 'expense') ||
-          (newType != 'income' && newType != 'expense')) {
-        throw StateError('Loại giao dịch không hợp lệ.');
-      }
-
-      final oldEffect = oldType == 'income' ? oldAmount : -oldAmount;
-
-      final newEffect = newType == 'income' ? newAmount : -newAmount;
-
-      final oldBalance = _amount(oldWalletSnapshot.data()?['balance']);
-
-      if (oldWalletId == newWalletId) {
-        // Cùng ví: hoàn tác giao dịch cũ,
-        // rồi áp dụng giao dịch đã sửa.
-        tx.update(oldWalletRef, {
-          'balance': oldBalance - oldEffect + newEffect,
-        });
-      } else {
-        final newBalance = _amount(newWalletSnapshot.data()?['balance']);
-
-        // Hoàn tác giao dịch ở ví cũ.
-        tx.update(oldWalletRef, {'balance': oldBalance - oldEffect});
-
-        // Áp dụng giao dịch mới ở ví mới.
-        tx.update(newWalletRef, {'balance': newBalance + newEffect});
-      }
-
-      // Giữ nguyên id, userId và createdAt.
-      tx.update(transactionRef, {
-        ...changed,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    });
+    await context.read<TransactionProvider>().updateTransactionWithWalletUpdate(
+      uid,
+      widget.transactionId,
+      changed,
+    );
   }
 
   // ==========================================
@@ -331,61 +301,24 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      final transactionRef = _transactionRef!;
-
-      await _db.runTransaction((tx) async {
-        final snapshot = await tx.get(transactionRef);
-
-        if (!snapshot.exists) {
-          throw StateError('Giao dịch không còn tồn tại.');
-        }
-
-        final data = snapshot.data()!;
-
-        if (data['userId'] != _uid) {
-          throw StateError('Giao dịch không hợp lệ.');
-        }
-
-        final walletId = data['walletId']?.toString() ?? '';
-
-        if (walletId.isEmpty) {
-          throw StateError('Giao dịch thiếu thông tin ví.');
-        }
-
-        final walletRef = _collection('wallets').doc(walletId);
-
-        final walletSnapshot = await tx.get(walletRef);
-
-        if (!walletSnapshot.exists) {
-          throw StateError('Không tìm thấy ví.');
-        }
-
-        if (walletSnapshot.data()?['userId'] != _uid) {
-          throw StateError('Ví không thuộc tài khoản.');
-        }
-
-        final amount = _amount(data['amount']);
-        final balance = _amount(walletSnapshot.data()?['balance']);
-
-        if (amount <= 0) {
-          throw StateError('Số tiền giao dịch không hợp lệ.');
-        }
-
-        if (data['type'] != 'income' && data['type'] != 'expense') {
-          throw StateError('Loại giao dịch không hợp lệ.');
-        }
-
-        // Thu nhập: xóa thì trừ lại.
-        // Chi tiêu: xóa thì cộng lại.
-        final adjustment = data['type'] == 'income' ? -amount : amount;
-
-        tx.update(walletRef, {'balance': balance + adjustment});
-
-        tx.delete(transactionRef);
-      });
+      final imageUrl = await context
+          .read<TransactionProvider>()
+          .deleteTransactionWithWalletUpdate(_uid!, widget.transactionId);
 
       if (!mounted) return;
 
+      try {
+        await _momentImages.deleteRemote(imageUrl);
+      } on FirebaseException catch (error) {
+        _showMessage(
+          'Đã xóa giao dịch nhưng chưa xóa được ảnh: '
+          '${error.message ?? error.code}',
+        );
+      } catch (error) {
+        _showMessage('Đã xóa giao dịch nhưng chưa xóa được ảnh: $error');
+      }
+
+      if (!mounted) return;
       context.go(AppRouter.home);
     } catch (error) {
       _showMessage('Không thể xóa giao dịch: $error');
@@ -499,19 +432,20 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 const SizedBox(height: 16),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(18),
-                  child: File(imagePath).existsSync()
-                      ? Image.file(
-                          File(imagePath),
+                  child:
+                      MomentImageService.isRemoteUrl(imagePath) ||
+                          File(imagePath).existsSync()
+                      ? SizedBox(
                           height: 240,
                           width: double.infinity,
-                          fit: BoxFit.cover,
+                          child: MomentImage(imagePath: imagePath),
                         )
                       : Container(
                           height: 100,
                           alignment: Alignment.center,
                           color: Theme.of(context).colorScheme.surface,
                           child: const Text(
-                            'Ảnh chỉ có trên thiết bị đã thêm giao dịch.',
+                            'Không tìm thấy ảnh trên thiết bị này.',
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -528,7 +462,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     const Divider(),
                     _detailRow('Danh mục', category),
                     const Divider(),
-                    _detailRow('Tên món / nội dung', title.isEmpty ? 'Không có' : title),
+                    _detailRow(
+                      'Tên món / nội dung',
+                      title.isEmpty ? 'Không có' : title,
+                    ),
                     const Divider(),
 
                     FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -751,9 +688,8 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
       final appDir = await getApplicationDocumentsDirectory();
       final fileName =
           '${DateTime.now().microsecondsSinceEpoch}${path.extension(picked.path)}';
-      final saved = await File(picked.path).copy(
-        path.join(appDir.path, fileName),
-      );
+      final saved = await File(picked.path)
+          .copy(path.join(appDir.path, fileName));
 
       setState(() => _imagePath = saved.path);
     } catch (error) {
@@ -770,9 +706,8 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
         );
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không thể chọn ảnh: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Không thể chọn ảnh: $error')));
     }
   }
 
@@ -970,11 +905,10 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
               if (_imagePath != null && File(_imagePath!).existsSync())
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    File(_imagePath!),
+                  child: SizedBox(
                     height: 140,
                     width: double.infinity,
-                    fit: BoxFit.cover,
+                    child: MomentImage(imagePath: _imagePath!),
                   ),
                 )
               else

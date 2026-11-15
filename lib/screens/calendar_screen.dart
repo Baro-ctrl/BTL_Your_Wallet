@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app/app_router.dart';
+import '../services/moment_image_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_bottom_nav.dart';
 import '../widgets/finance_ui.dart';
@@ -222,7 +223,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                         child: Column(
                           children: [
-                            const Text('Thu nhập', style: TextStyle(fontSize: 12, color: AppColors.income)),
+                            const Text(
+                              'Thu nhập',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.income,
+                              ),
+                            ),
                             const SizedBox(height: 4),
                             Text(
                               '+${formatVnd(totalIncome)}',
@@ -246,7 +253,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                         child: Column(
                           children: [
-                            const Text('Chi tiêu', style: TextStyle(fontSize: 12, color: AppColors.expense)),
+                            const Text(
+                              'Chi tiêu',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.expense,
+                              ),
+                            ),
                             const SizedBox(height: 4),
                             Text(
                               '-${formatVnd(totalExpense)}',
@@ -299,7 +312,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
-    final daysInMonth = DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
+    final daysInMonth = DateTime(
+      visibleMonth.year,
+      visibleMonth.month + 1,
+      0,
+    ).day;
     final startOffset = firstDay.weekday - 1;
     final cellCount = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
 
@@ -310,12 +327,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     for (final doc in transactions) {
       final date = _date(doc.data()['date']);
       if (date == null) continue;
-      if (date.year != visibleMonth.year || date.month != visibleMonth.month) continue;
+      if (date.year != visibleMonth.year || date.month != visibleMonth.month) {
+        continue;
+      }
 
       transactionCounts[date.day] = (transactionCounts[date.day] ?? 0) + 1;
 
       final img = doc.data()['imagePath']?.toString();
-      if (img != null && img.isNotEmpty && !dayImagePaths.containsKey(date.day)) {
+      if (img != null &&
+          img.isNotEmpty &&
+          !dayImagePaths.containsKey(date.day)) {
         dayImagePaths[date.day] = img;
       }
     }
@@ -358,7 +379,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // THỨ TRONG TUẦN
           // ==================================
           Row(
-            children: const ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) {
+            children: const ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((
+              day,
+            ) {
               return Expanded(
                 child: Center(
                   child: Text(
@@ -430,13 +453,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Text(
                         '$day',
                         style: TextStyle(
-                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                          color: selected ? Colors.white : AppColors.textPrimary,
+                          fontWeight: selected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: selected
+                              ? Colors.white
+                              : AppColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
 
-                      if (imagePath != null && File(imagePath).existsSync())
+                      if (imagePath != null &&
+                          (MomentImageService.isRemoteUrl(imagePath) ||
+                              File(imagePath).existsSync()))
                         Icon(
                           Icons.photo_camera,
                           size: 14,
@@ -494,7 +523,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               // BIỂU TƯỢNG THU / CHI
               CircleAvatar(
                 radius: 22,
-                backgroundColor: isIncome ? const Color(0xFFDCFCE7) : const Color(0xFFFFEDD5),
+                backgroundColor: isIncome
+                    ? const Color(0xFFDCFCE7)
+                    : const Color(0xFFFFEDD5),
                 child: Icon(
                   isIncome ? Icons.arrow_downward : Icons.arrow_upward,
                   size: 20,
@@ -510,7 +541,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       category,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                     if (note.isNotEmpty) ...[
                       const SizedBox(height: 3),
@@ -518,13 +552,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         note,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 4),
                     Text(
                       date == null ? 'Chưa có giờ' : _timeText(date),
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
@@ -543,7 +583,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
             ],
           ),
         ),
@@ -619,9 +663,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            FinanceTitle('Ngày ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+            FinanceTitle(
+              'Ngày ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+            ),
             TextButton.icon(
-              onPressed: () => _showDayDetailBottomSheet(context, selectedDate, transactions),
+              onPressed: () => _showDayDetailBottomSheet(
+                context,
+                selectedDate,
+                transactions,
+              ),
               icon: const Icon(Icons.unfold_more, size: 18),
               label: const Text('Xem bảng trượt'),
             ),
@@ -637,15 +687,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: FinanceCard(
                 child: Column(
                   children: [
-                    const Icon(Icons.arrow_downward, color: AppColors.income, size: 20),
+                    const Icon(
+                      Icons.arrow_downward,
+                      color: AppColors.income,
+                      size: 20,
+                    ),
                     const SizedBox(height: 6),
-                    const Text('Thu nhập', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    const Text(
+                      'Thu nhập',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         formatVnd(totalIncome),
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.income, fontSize: 15),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.income,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
@@ -659,15 +723,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: FinanceCard(
                 child: Column(
                   children: [
-                    const Icon(Icons.arrow_upward, color: AppColors.expense, size: 20),
+                    const Icon(
+                      Icons.arrow_upward,
+                      color: AppColors.expense,
+                      size: 20,
+                    ),
                     const SizedBox(height: 6),
-                    const Text('Chi tiêu', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    const Text(
+                      'Chi tiêu',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         formatVnd(totalExpense),
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.expense, fontSize: 15),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.expense,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
@@ -690,7 +768,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
               child: Column(
                 children: [
-                  Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.textSecondary),
+                  Icon(
+                    Icons.receipt_long_outlined,
+                    size: 40,
+                    color: AppColors.textSecondary,
+                  ),
                   SizedBox(height: 12),
                   Text(
                     'Chưa có giao dịch trong ngày này',

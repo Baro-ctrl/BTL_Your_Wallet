@@ -1,12 +1,10 @@
-
 import 'package:flutter/material.dart';
 
 import '../models/transaction_model.dart';
 import '../repositories/transaction_repository.dart';
 
 class TransactionProvider extends ChangeNotifier {
-  final TransactionRepository _repository =
-  TransactionRepository();
+  final TransactionRepository _repository = TransactionRepository();
 
   List<TransactionModel> transactions = [];
 
@@ -32,19 +30,13 @@ class TransactionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loadByDate(
-      String userId,
-      DateTime date,
-      ) async {
+  Future<void> loadByDate(String userId, DateTime date) async {
     isLoading = true;
     error = null;
     notifyListeners();
 
     try {
-      transactions = await _repository.getByDate(
-        userId,
-        date,
-      );
+      transactions = await _repository.getByDate(userId, date);
       _calculateTotals();
     } catch (e) {
       error = e.toString();
@@ -54,21 +46,13 @@ class TransactionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loadByMonth(
-      String userId,
-      int year,
-      int month,
-      ) async {
+  Future<void> loadByMonth(String userId, int year, int month) async {
     isLoading = true;
     error = null;
     notifyListeners();
 
     try {
-      transactions = await _repository.getByMonth(
-        userId,
-        year,
-        month,
-      );
+      transactions = await _repository.getByMonth(userId, year, month);
       _calculateTotals();
     } catch (e) {
       error = e.toString();
@@ -78,28 +62,47 @@ class TransactionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addTransaction(
-      TransactionModel transaction,
-      ) async {
+  Future<void> addTransaction(TransactionModel transaction) async {
     await _repository.addTransaction(transaction);
     await loadTransactions(transaction.userId);
   }
 
-  Future<void> updateTransaction(
-      TransactionModel transaction,
-      ) async {
+  Future<void> addTransactionWithWalletUpdate(
+    TransactionModel transaction, {
+    required String categoryName,
+  }) {
+    return _repository.addTransactionWithWalletUpdate(
+      transaction,
+      categoryName: categoryName,
+    );
+  }
+
+  Future<void> updateTransactionWithWalletUpdate(
+    String userId,
+    String transactionId,
+    Map<String, dynamic> changed,
+  ) {
+    return _repository.updateTransactionWithWalletUpdate(
+      userId,
+      transactionId,
+      changed,
+    );
+  }
+
+  Future<String?> deleteTransactionWithWalletUpdate(
+    String userId,
+    String transactionId,
+  ) {
+    return _repository.deleteTransactionWithWalletUpdate(userId, transactionId);
+  }
+
+  Future<void> updateTransaction(TransactionModel transaction) async {
     await _repository.updateTransaction(transaction);
     await loadTransactions(transaction.userId);
   }
 
-  Future<void> deleteTransaction(
-      String userId,
-      String transactionId,
-      ) async {
-    await _repository.deleteTransaction(
-      userId,
-      transactionId,
-    );
+  Future<void> deleteTransaction(String userId, String transactionId) async {
+    await _repository.deleteTransaction(userId, transactionId);
     await loadTransactions(userId);
   }
 

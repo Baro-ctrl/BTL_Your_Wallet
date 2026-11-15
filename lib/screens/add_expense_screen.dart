@@ -8,11 +8,16 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:provider/provider.dart';
 
 import '../app/app_router.dart';
+import '../models/transaction_model.dart';
 import '../services/auth_service.dart';
+import '../services/moment_image_service.dart';
+import '../providers/transaction_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_bottom_nav.dart';
+import '../widgets/moment_image.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   const AddExpenseScreen({super.key});
@@ -23,6 +28,7 @@ class AddExpenseScreen extends StatefulWidget {
 
 class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final MomentImageService _momentImages = MomentImageService();
 
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
@@ -330,9 +336,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       _saving = true;
     });
 
+    String? uploadedImageUrl;
     try {
       final userRef = _firestore.collection('users').doc(user.uid);
-      final walletRef = userRef.collection('wallets').doc(_selectedWalletId!);
       final transactionRef = userRef.collection('transactions').doc();
 
       final categoryId = _selectedCategoryId!;
@@ -340,50 +346,46 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       final walletId = _selectedWalletId!;
       final title = _titleController.text.trim();
       final note = _noteController.text.trim();
-      final delta = _type == 'income' ? amount : -amount;
 
-      await _firestore.runTransaction((transaction) async {
-        final walletSnapshot = await transaction.get(walletRef);
+      if (_imagePath != null) {
+        uploadedImageUrl = await _momentImages.upload(
+          userId: user.uid,
+          transactionId: transactionRef.id,
+          localPath: _imagePath!,
+        );
+      }
 
-        if (!walletSnapshot.exists) {
-          throw StateError('Ví không tồn tại. Vui lòng tải lại dữ liệu.');
-        }
-
-        final walletData = walletSnapshot.data();
-
-        if (walletData == null || walletData['userId'] != user.uid) {
-          throw StateError('Không thể xác minh ví của tài khoản.');
-        }
-
-        final oldBalance = _readAmount(walletData['balance']);
-        final newBalance = oldBalance + delta;
-
-        transaction.set(transactionRef, {
-          'id': transactionRef.id,
-          'userId': user.uid,
-          'type': _type,
-          'amount': amount,
-          'categoryId': categoryId,
-          'categoryName': categoryName,
-          'walletId': walletId,
-          'title': title,
-          'note': note,
-          'date': Timestamp.fromDate(_selectedDate),
-          'imagePath': _imagePath,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        transaction.update(walletRef, {'balance': newBalance});
-      });
+      if (!mounted) {
+        await _cleanupUploadedImage(uploadedImageUrl);
+        return;
+      }
+      await context.read<TransactionProvider>().addTransactionWithWalletUpdate(
+        TransactionModel(
+          id: transactionRef.id,
+          userId: user.uid,
+          categoryId: categoryId,
+          walletId: walletId,
+          amount: amount,
+          type: _type,
+          categoryName: categoryName,
+          title: title,
+          note: note,
+          date: _selectedDate,
+          imagePath: uploadedImageUrl,
+        ),
+        categoryName: categoryName,
+      );
 
       if (!mounted) return;
 
       _showMessage('Đã lưu giao dịch thành công!');
       context.go(AppRouter.home);
     } on FirebaseException catch (error) {
+      await _cleanupUploadedImage(uploadedImageUrl);
       if (!mounted) return;
       _showMessage('Không lưu được giao dịch: ${error.message ?? error.code}');
     } catch (error) {
+      await _cleanupUploadedImage(uploadedImageUrl);
       _showMessage('Không thể lưu giao dịch: $error');
     } finally {
       if (mounted) {
@@ -391,6 +393,18 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           _saving = false;
         });
       }
+    }
+  }
+
+  Future<void> _cleanupUploadedImage(String? imageUrl) async {
+    try {
+      await _momentImages.deleteRemote(imageUrl);
+    } on FirebaseException catch (error) {
+      debugPrint('[ADD_TRANSACTION] Image cleanup failed: $error');
+      _showMessage(
+        'Giao dịch chưa được lưu và ảnh tạm chưa xóa được. '
+        'Lỗi: ${error.message ?? error.code}',
+      );
     }
   }
 
@@ -674,11 +688,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.file(
-                        File(_imagePath!),
+                      child: SizedBox(
                         height: 160,
                         width: double.infinity,
-                        fit: BoxFit.cover,
+                        child: MomentImage(
+                          imagePath: _imagePath!,
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                     Positioned(

@@ -153,7 +153,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                       category,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                     if (note.isNotEmpty) ...[
                       const SizedBox(height: 3),
@@ -254,21 +257,27 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
           final availableCategories = categoriesSet.toList()..sort();
 
           // Áp dụng bộ lọc Thu/Chi và Bộ lọc Danh mục
-          final filteredDocs = monthDocs.where((doc) {
-            final data = doc.data();
-            final matchesType = (filter == 'all' || data['type'] == filter);
-            final catName = _categoryName(data);
-            final matchesCategory = (selectedCategoryFilter == 'all' ||
-                catName == selectedCategoryFilter);
-            return matchesType && matchesCategory;
-          }).toList()
-            ..sort((a, b) => _date(b.data()['date']).compareTo(_date(a.data()['date'])));
+          final filteredDocs =
+              monthDocs.where((doc) {
+                final data = doc.data();
+                final matchesType = (filter == 'all' || data['type'] == filter);
+                final catName = _categoryName(data);
+                final matchesCategory =
+                    (selectedCategoryFilter == 'all' ||
+                    catName == selectedCategoryFilter);
+                return matchesType && matchesCategory;
+              }).toList()..sort(
+                (a, b) =>
+                    _date(b.data()['date']).compareTo(_date(a.data()['date'])),
+              );
 
           // Gom nhóm giao dịch theo ngày (YYYY-MM-DD)
-          final groupedTransactions = <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+          final groupedTransactions =
+              <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
           for (final doc in filteredDocs) {
             final date = _date(doc.data()['date']);
-            final dayKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+            final dayKey =
+                '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
             groupedTransactions.putIfAbsent(dayKey, () => []).add(doc);
           }
 
@@ -325,7 +334,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                           label: const Text('Tất cả danh mục'),
                           selected: selectedCategoryFilter == 'all',
                           onSelected: (selected) {
-                            if (selected) setState(() => selectedCategoryFilter = 'all');
+                            if (selected) {
+                              setState(() => selectedCategoryFilter = 'all');
+                            }
                           },
                           selectedColor: AppColors.primary,
                           labelStyle: TextStyle(
@@ -346,12 +357,16 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                             selected: isSelected,
                             onSelected: (selected) {
                               setState(() {
-                                selectedCategoryFilter = selected ? catName : 'all';
+                                selectedCategoryFilter = selected
+                                    ? catName
+                                    : 'all';
                               });
                             },
                             selectedColor: AppColors.primary,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppColors.textPrimary,
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppColors.textPrimary,
                               fontWeight: FontWeight.w600,
                               fontSize: 12,
                             ),
@@ -377,8 +392,12 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                   ),
                   if (selectedCategoryFilter != 'all')
                     TextButton(
-                      onPressed: () => setState(() => selectedCategoryFilter = 'all'),
-                      child: const Text('Xóa lọc danh mục', style: TextStyle(fontSize: 12)),
+                      onPressed: () =>
+                          setState(() => selectedCategoryFilter = 'all'),
+                      child: const Text(
+                        'Xóa lọc danh mục',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                 ],
               ),
@@ -419,7 +438,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                   children: [
                     // TIÊU ĐỀ NGÀY KÈM TỔNG TIỀN NGÀY
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       margin: const EdgeInsets.only(top: 8, bottom: 8),
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.08),

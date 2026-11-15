@@ -7,6 +7,7 @@ class TransactionModel {
   final String walletId;
   final int amount; // Số nguyên (đồng) theo đúng thiết kế của A
   final String type; // 'expense' hoặc 'income'
+  final String categoryName;
   final String title;
   final String note;
   final DateTime date;
@@ -19,6 +20,7 @@ class TransactionModel {
     required this.walletId,
     required this.amount,
     required this.type,
+    this.categoryName = '',
     this.title = '',
     required this.note,
     required this.date,
@@ -31,8 +33,9 @@ class TransactionModel {
     final date = switch (rawDate) {
       Timestamp value => value.toDate(),
       DateTime value => value,
-      String value when DateTime.tryParse(value) != null =>
-        DateTime.parse(value),
+      String value when DateTime.tryParse(value) != null => DateTime.parse(
+        value,
+      ),
       _ => throw FormatException('Invalid transaction date: $rawDate'),
     };
 
@@ -43,6 +46,7 @@ class TransactionModel {
       walletId: map['walletId'] as String,
       amount: (map['amount'] as num).toInt(),
       type: map['type'] as String,
+      categoryName: map['categoryName']?.toString() ?? '',
       title: map['title']?.toString() ?? '',
       note: map['note']?.toString() ?? '',
       date: date,
@@ -59,6 +63,7 @@ class TransactionModel {
       'walletId': walletId,
       'amount': amount,
       'type': type,
+      'categoryName': categoryName,
       'title': title,
       'note': note,
       'date': date.toIso8601String(),

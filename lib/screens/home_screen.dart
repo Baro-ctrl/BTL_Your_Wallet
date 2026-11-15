@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +7,7 @@ import '../app/app_router.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_bottom_nav.dart';
 import '../widgets/finance_ui.dart';
+import '../widgets/moment_image.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -236,7 +235,8 @@ class HomeScreen extends StatelessWidget {
                         })
                         .fold<int>(
                           0,
-                          (total, doc) => total + _toAmount(doc.data()['amount']),
+                          (total, doc) =>
+                              total + _toAmount(doc.data()['amount']),
                         );
 
                     return _buildHome(
@@ -337,7 +337,8 @@ class HomeScreen extends StatelessWidget {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final userName = currentUser?.displayName ??
+    final userName =
+        currentUser?.displayName ??
         currentUser?.email?.split('@').first ??
         'Bạn';
 
@@ -538,9 +539,6 @@ class HomeScreen extends StatelessWidget {
                     )
                   else
                     ...todayMoments.map((moment) {
-                      final imageFile = File(moment['imagePath'] as String);
-                      final exists = imageFile.existsSync();
-
                       return Padding(
                         padding: const EdgeInsets.only(right: 10),
                         child: InkWell(
@@ -560,15 +558,9 @@ class HomeScreen extends StatelessWidget {
                                   width: 85,
                                   height: 90,
                                   color: Colors.grey.shade200,
-                                  child: exists
-                                      ? Image.file(
-                                          imageFile,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const Icon(
-                                          Icons.broken_image,
-                                          color: Colors.grey,
-                                        ),
+                                  child: MomentImage(
+                                    imagePath: moment['imagePath'] as String,
+                                  ),
                                 ),
                                 Positioned(
                                   bottom: 0,
@@ -737,11 +729,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _monthBudgetCard(
-    BuildContext context,
-    int spent,
-    int budget,
-  ) {
+  Widget _monthBudgetCard(BuildContext context, int spent, int budget) {
     final remaining = budget > spent ? budget - spent : 0;
     final progress = budget > 0 ? (spent / budget).clamp(0.0, 1.0) : 0.0;
     final exceeded = budget > 0 && spent > budget;
@@ -788,7 +776,7 @@ class HomeScreen extends StatelessWidget {
             Text(
               exceeded
                   ? 'Đã vượt ngân sách ${formatVnd(spent - budget)} '
-                      '(hạn mức ${formatVnd(budget)})'
+                        '(hạn mức ${formatVnd(budget)})'
                   : 'Còn lại ${formatVnd(remaining)} / ${formatVnd(budget)}',
               style: TextStyle(
                 color: exceeded ? AppColors.expense : AppColors.textSecondary,

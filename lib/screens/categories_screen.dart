@@ -349,10 +349,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               IconButton(
                 tooltip: 'Xóa danh mục',
                 onPressed: _busy ? null : () => _deleteCategory(category),
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppColors.danger,
-                ),
+                icon: const Icon(Icons.delete_outline, color: AppColors.danger),
               ),
             ],
           ),

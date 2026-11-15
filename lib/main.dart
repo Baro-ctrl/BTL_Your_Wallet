@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'app/app_router.dart';
 import 'firebase_options.dart';
 import 'providers/expense_provider.dart';
+import 'providers/transaction_provider.dart';
 import 'services/theme_controller.dart';
 import 'theme/your_wallet_themes.dart';
 
@@ -40,6 +41,7 @@ class YourWalletApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
+        ChangeNotifierProvider(create: (_) => TransactionProvider()),
       ],
       child: AnimatedBuilder(
         animation: ThemeController.instance,
