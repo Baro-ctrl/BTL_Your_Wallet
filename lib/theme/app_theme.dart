@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'app_colors.dart';
 
 class AppTheme {
@@ -23,10 +24,7 @@ class AppTheme {
       iconTheme: IconThemeData(color: AppColors.textPrimary),
     ),
     textTheme: const TextTheme(
-      bodyMedium: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 14,
-      ),
+      bodyMedium: TextStyle(color: AppColors.textPrimary, fontSize: 14),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

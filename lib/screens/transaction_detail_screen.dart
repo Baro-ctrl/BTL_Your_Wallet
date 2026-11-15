@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../app/app_router.dart';
 import '../theme/app_colors.dart';
@@ -438,7 +443,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           final date = _date(data['date']);
           final category = _categoryName(data);
 
+          final title = data['title']?.toString().trim() ?? '';
           final note = data['note']?.toString().trim() ?? '';
+          final imagePath = data['imagePath']?.toString();
 
           final walletId = data['walletId']?.toString() ?? '';
 
@@ -477,12 +484,39 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      note.isEmpty ? category : note,
+                      title.isNotEmpty
+                          ? title
+                          : note.isNotEmpty
+                          ? note
+                          : category,
                       textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
+
+              if (imagePath != null && imagePath.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: File(imagePath).existsSync()
+                      ? Image.file(
+                          File(imagePath),
+                          height: 240,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          height: 100,
+                          alignment: Alignment.center,
+                          color: Theme.of(context).colorScheme.surface,
+                          child: const Text(
+                            'Ảnh chỉ có trên thiết bị đã thêm giao dịch.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                ),
+              ],
 
               const SizedBox(height: 18),
 
@@ -493,6 +527,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     _detailRow('Mã giao dịch', widget.transactionId),
                     const Divider(),
                     _detailRow('Danh mục', category),
+                    const Divider(),
+                    _detailRow('Tên món / nội dung', title.isEmpty ? 'Không có' : title),
                     const Divider(),
 
                     FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -572,12 +608,15 @@ class _TransactionEditDialog extends StatefulWidget {
 
 class _TransactionEditDialogState extends State<_TransactionEditDialog> {
   late final TextEditingController _amountController;
+  late final TextEditingController _titleController;
   late final TextEditingController _noteController;
 
   late String _type;
   String? _categoryId;
   String? _walletId;
+  String? _imagePath;
   late DateTime _chosenDate;
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -595,6 +634,9 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
           : amount?.toString() ?? '',
     );
 
+    _titleController = TextEditingController(
+      text: original['title']?.toString() ?? '',
+    );
     _noteController = TextEditingController(
       text: original['note']?.toString() ?? '',
     );
@@ -602,6 +644,7 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
     _categoryId = original['categoryId']?.toString();
 
     _walletId = original['walletId']?.toString();
+    _imagePath = original['imagePath']?.toString();
 
     final rawDate = original['date'];
 
@@ -620,6 +663,7 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
   void dispose() {
     // Controller được hủy cùng chính Dialog Widget.
     _amountController.dispose();
+    _titleController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -676,6 +720,62 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
     });
   }
 
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_chosenDate),
+      helpText: 'Chọn giờ giao dịch',
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _chosenDate = DateTime(
+        _chosenDate.year,
+        _chosenDate.month,
+        _chosenDate.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 70,
+      );
+      if (picked == null || !mounted) return;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final fileName =
+          '${DateTime.now().microsecondsSinceEpoch}${path.extension(picked.path)}';
+      final saved = await File(picked.path).copy(
+        path.join(appDir.path, fileName),
+      );
+
+      setState(() => _imagePath = saved.path);
+    } catch (error) {
+      if (!mounted) return;
+      if (error is PlatformException &&
+          source == ImageSource.camera &&
+          error.code.toLowerCase().contains('denied')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Chưa có quyền camera. Hãy bật quyền Camera trong Cài đặt ứng dụng.',
+            ),
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể chọn ảnh: $error')),
+      );
+    }
+  }
+
   void _submit() {
     final amount = int.tryParse(
       _amountController.text.trim().replaceAll('.', ''),
@@ -716,6 +816,8 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
       'categoryId': _categoryId,
       'categoryName': categoryName,
       'walletId': _walletId,
+      'imagePath': _imagePath,
+      'title': _titleController.text.trim(),
       'note': _noteController.text.trim(),
       'date': Timestamp.fromDate(_chosenDate),
     });
@@ -839,6 +941,18 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
 
               const SizedBox(height: 14),
 
+              TextField(
+                controller: _titleController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Tên món / nội dung',
+                  prefixIcon: Icon(Icons.receipt_long_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
               // GHI CHÚ
               TextField(
                 controller: _noteController,
@@ -853,6 +967,45 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
 
               const SizedBox(height: 14),
 
+              if (_imagePath != null && File(_imagePath!).existsSync())
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    File(_imagePath!),
+                    height: 140,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Chưa có ảnh khoảnh khắc.'),
+                ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _pickImage(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Chụp ảnh'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _pickImage(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: const Text('Chọn ảnh'),
+                  ),
+                  if (_imagePath != null)
+                    TextButton.icon(
+                      onPressed: () => setState(() => _imagePath = null),
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Gỡ ảnh'),
+                    ),
+                ],
+              ),
+
+              const SizedBox(height: 14),
+
               // NGÀY
               SizedBox(
                 width: double.infinity,
@@ -860,6 +1013,18 @@ class _TransactionEditDialogState extends State<_TransactionEditDialog> {
                   onPressed: _pickDate,
                   icon: const Icon(Icons.calendar_today_outlined),
                   label: Text(_formatDate(_chosenDate)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _pickTime,
+                  icon: const Icon(Icons.access_time),
+                  label: Text(
+                    '${_chosenDate.hour.toString().padLeft(2, '0')}:'
+                    '${_chosenDate.minute.toString().padLeft(2, '0')}',
+                  ),
                 ),
               ),
             ],

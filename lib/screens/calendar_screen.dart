@@ -7,7 +7,12 @@ import 'package:go_router/go_router.dart';
 
 import '../app/app_router.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_bottom_nav.dart';
 import '../widgets/finance_ui.dart';
+
+// ==========================================
+// CALENDAR SCREEN
+// ==========================================
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -23,7 +28,46 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ==========================================
-  // 1. HÀM HỖ TRỢ
+  // 1. QUAY VỀ TRANG CHỦ
+  // ==========================================
+
+  void _goHome() {
+    context.go(AppRouter.home);
+  }
+
+  // ==========================================
+  // 2. APP BAR - NÚT QUAY LẠI PHÍA TRÊN
+  // ==========================================
+
+  PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      centerTitle: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      foregroundColor: scheme.onSurface,
+
+      // NÚT QUAY LẠI GÓC TRÊN BÊN TRÁI
+      leading: IconButton(
+        tooltip: 'Về Trang chủ',
+        icon: const Icon(Icons.arrow_back_rounded, size: 25),
+        onPressed: _goHome,
+      ),
+
+      // TIÊU ĐỀ Ở GIỮA
+      title: const Text(
+        'Lịch chi tiêu',
+        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // ==========================================
+  // 3. CHUYỂN SỐ TIỀN
   // ==========================================
 
   int _amount(dynamic value) {
@@ -31,12 +75,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return int.tryParse(value?.toString().replaceAll('.', '') ?? '') ?? 0;
   }
 
+  // ==========================================
+  // 4. CHUYỂN NGÀY THÁNG
+  // ==========================================
+
   DateTime? _date(dynamic value) {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
     if (value is String) return DateTime.tryParse(value);
     return null;
   }
+
+  // ==========================================
+  // 5. SO SÁNH NGÀY
+  // ==========================================
 
   bool _sameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
@@ -46,10 +98,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return _sameDay(date, DateTime.now());
   }
 
+  // ==========================================
+  // 6. HIỂN THỊ GIỜ
+  // ==========================================
+
   String _timeText(DateTime date) {
     return '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
   }
+
+  // ==========================================
+  // 7. LẤY TÊN DANH MỤC
+  // ==========================================
 
   String _categoryName(Map<String, dynamic> data) {
     final saved = data['categoryName']?.toString().trim() ?? '';
@@ -66,7 +126,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       'other_income': 'Thu nhập khác',
     };
 
-    return defaultNames[data['categoryId']] ?? 'Giao dịch';
+    return defaultNames[data['categoryId']?.toString()] ?? 'Giao dịch';
   }
 
   void _changeMonth(int offset) {
@@ -85,6 +145,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return transactionDate != null && _sameDay(transactionDate, date);
     }).toList();
 
+    // Sắp xếp giao dịch mới nhất trước
     result.sort((a, b) {
       final dateA = _date(a.data()['date'])!;
       final dateB = _date(b.data()['date'])!;
@@ -236,6 +297,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _calendarCard(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final daysInMonth = DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
     final startOffset = firstDay.weekday - 1;
@@ -261,23 +323,30 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return FinanceCard(
       child: Column(
         children: [
+          // ==================================
           // CHỌN THÁNG
+          // ==================================
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
+                tooltip: 'Tháng trước',
                 onPressed: () => _changeMonth(-1),
                 icon: const Icon(Icons.chevron_left, size: 28),
               ),
+
               Text(
                 'Tháng ${visibleMonth.month}/${visibleMonth.year}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: scheme.onSurface,
                 ),
               ),
+
               IconButton(
+                tooltip: 'Tháng sau',
                 onPressed: () => _changeMonth(1),
                 icon: const Icon(Icons.chevron_right, size: 28),
               ),
@@ -285,17 +354,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           const SizedBox(height: 16),
 
+          // ==================================
           // THỨ TRONG TUẦN
+          // ==================================
           Row(
             children: const ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) {
               return Expanded(
                 child: Center(
                   child: Text(
                     day,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
-                      color: AppColors.textSecondary,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -304,17 +375,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           const SizedBox(height: 12),
 
-          // LƯỚI NGÀY
+          // ==================================
+          // LƯỚI NGÀY TRONG THÁNG
+          // ==================================
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: cellCount,
+
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
               mainAxisSpacing: 6,
               crossAxisSpacing: 4,
               childAspectRatio: 0.85,
             ),
+
             itemBuilder: (context, index) {
               final day = index - startOffset + 1;
               if (day < 1 || day > daysInMonth) {
@@ -323,6 +398,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
               final date = DateTime(visibleMonth.year, visibleMonth.month, day);
               final selected = _sameDay(date, selectedDate);
+
               final today = _isToday(date);
               final count = transactionCounts[day] ?? 0;
               final imagePath = dayImagePaths[day];
@@ -334,15 +410,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   });
                   _showDayDetailBottomSheet(context, date, transactions);
                 },
+
                 borderRadius: BorderRadius.circular(12),
+
                 child: Container(
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.transparent,
+                    color: selected ? scheme.primary : Colors.transparent,
+
                     borderRadius: BorderRadius.circular(12),
+
                     border: today && !selected
-                        ? Border.all(color: AppColors.primary, width: 1.5)
+                        ? Border.all(color: scheme.primary, width: 1.5)
                         : null,
                   ),
+
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -366,7 +447,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           width: 5,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: selected ? Colors.white : AppColors.primary,
+                            color: selected ? scheme.onPrimary : scheme.primary,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -388,22 +469,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _transactionTile(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     final isIncome = data['type'] == 'income';
+
     final amount = _amount(data['amount']);
     final date = _date(data['date']);
     final category = _categoryName(data);
-    final note = data['note']?.toString().trim() ?? '';
+    final note = data['title']?.toString().trim().isNotEmpty == true
+        ? data['title'].toString().trim()
+        : data['note']?.toString().trim() ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
+
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
+
         onTap: () {
           Navigator.pop(context); // đóng bottom sheet
           context.push(AppRouter.transactionDetailPath(doc.id));
         },
+
         child: FinanceCard(
           child: Row(
             children: [
+              // BIỂU TƯỢNG THU / CHI
               CircleAvatar(
                 radius: 22,
                 backgroundColor: isIncome ? const Color(0xFFDCFCE7) : const Color(0xFFFFEDD5),
@@ -470,12 +558,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildCalendar(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+
+    // LẤY GIAO DỊCH CỦA NGÀY ĐƯỢC CHỌN
     final selectedTransactions = _transactionsOn(selectedDate, transactions);
+
+    final monthExpense = transactions.fold<int>(0, (total, doc) {
+      final data = doc.data();
+      final date = _date(data['date']);
+      if (date == null ||
+          date.year != visibleMonth.year ||
+          date.month != visibleMonth.month ||
+          data['type'] != 'expense') {
+        return total;
+      }
+      return total + _amount(data['amount']);
+    });
 
     int totalIncome = 0;
     int totalExpense = 0;
     for (final doc in selectedTransactions) {
       final data = doc.data();
+
       final amount = _amount(data['amount']);
       if (data['type'] == 'income') {
         totalIncome += amount;
@@ -491,6 +595,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         const SizedBox(height: 20),
 
+        FinanceCard(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Tổng chi tháng này',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                formatVnd(monthExpense),
+                style: const TextStyle(
+                  color: AppColors.expense,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -505,6 +630,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         const SizedBox(height: 12),
 
+        // THU NHẬP - CHI TIÊU
         Row(
           children: [
             Expanded(
@@ -526,7 +652,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ),
             ),
+
             const SizedBox(width: 12),
+
             Expanded(
               child: FinanceCard(
                 child: Column(
@@ -551,13 +679,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         const SizedBox(height: 20),
 
-        const FinanceTitle('Giao dịch trong ngày'),
+        FinanceTitle('Giao dịch trong ngày (${selectedTransactions.length})'),
         const SizedBox(height: 12),
 
+        // CHƯA CÓ GIAO DỊCH
         if (selectedTransactions.isEmpty)
-          const FinanceCard(
+          FinanceCard(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+              padding: const EdgeInsets.symmetric(vertical: 24),
+
               child: Column(
                 children: [
                   Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.textSecondary),
@@ -565,13 +695,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   Text(
                     'Chưa có giao dịch trong ngày này',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
           ),
 
+        // DANH SÁCH GIAO DỊCH
         ...selectedTransactions.map(_transactionTile),
       ],
     );
@@ -581,9 +712,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
+    // CHƯA ĐĂNG NHẬP
     if (user == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Lịch chi tiêu')),
+        appBar: _buildAppBar(),
         body: const Center(child: Text('Vui lòng đăng nhập.')),
       );
     }
@@ -599,7 +731,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: transactionsRef.snapshots(),
+
           builder: (context, snapshot) {
+            // LỖI TẢI DỮ LIỆU
             if (snapshot.hasError) {
               return Center(
                 child: Padding(
@@ -613,14 +747,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
               );
             }
 
+            // ĐANG TẢI DỮ LIỆU
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
+            // HIỂN THỊ LỊCH
             return _buildCalendar(snapshot.data!.docs);
           },
         ),
       ),
+
+      // ======================================
+      // THANH ĐIỀU HƯỚNG 5 NÚT
+      // ======================================
+      bottomNavigationBar: const AppBottomNav(),
     );
   }
 }

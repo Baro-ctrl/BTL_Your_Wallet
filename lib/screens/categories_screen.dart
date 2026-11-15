@@ -200,6 +200,63 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     }
   }
 
+  Future<void> _deleteCategory(
+    QueryDocumentSnapshot<Map<String, dynamic>> category,
+  ) async {
+    if (_busy || _uid == null) return;
+
+    final name = category.data()['name']?.toString() ?? 'danh mục này';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Xóa "$name"?'),
+        content: const Text(
+          'Danh mục chỉ xóa được khi chưa được dùng trong giao dịch.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final transactions = await _db
+          .collection('users')
+          .doc(_uid)
+          .collection('transactions')
+          .where('categoryId', isEqualTo: category.id)
+          .limit(1)
+          .get();
+
+      if (transactions.docs.isNotEmpty) {
+        _showMessage(
+          'Danh mục đang được giao dịch sử dụng. '
+          'Hãy đổi danh mục cho các giao dịch trước khi xóa.',
+        );
+        return;
+      }
+
+      await category.reference.delete();
+      _showMessage('Đã xóa danh mục "$name".');
+    } on FirebaseException catch (error) {
+      _showMessage('Không thể xóa danh mục: ${error.message ?? error.code}');
+    } catch (error) {
+      _showMessage('Không thể xóa danh mục: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ==========================================
   // 3. TAB THU NHẬP / CHI TIÊU
   // ==========================================
@@ -289,7 +346,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
               const SizedBox(width: 8),
 
-              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              IconButton(
+                tooltip: 'Xóa danh mục',
+                onPressed: _busy ? null : () => _deleteCategory(category),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.danger,
+                ),
+              ),
             ],
           ),
         ),

@@ -25,6 +25,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
 
   String _type = 'expense';
@@ -55,6 +56,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   @override
   void dispose() {
     _amountController.dispose();
+    _titleController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -67,16 +69,27 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         imageQuality: 70,
       );
 
-      if (pickedFile != null) {
+      if (pickedFile != null && mounted) {
         final appDir = await getApplicationDocumentsDirectory();
         final fileName =
             '${DateTime.now().millisecondsSinceEpoch}${path.extension(pickedFile.path)}';
         final savedImage = await File(pickedFile.path)
             .copy('${appDir.path}/$fileName');
 
+        if (!mounted) return;
         setState(() {
           _imagePath = savedImage.path;
         });
+      }
+    } on PlatformException catch (error) {
+      debugPrint('[ADD_TRANSACTION] Image permission error: $error');
+      if (source == ImageSource.camera &&
+          error.code.toLowerCase().contains('denied')) {
+        _showMessage(
+          'Chưa có quyền camera. Hãy bật quyền Camera trong Cài đặt ứng dụng.',
+        );
+      } else {
+        _showMessage('Không thể chọn ảnh: ${error.message ?? error.code}');
       }
     } catch (e) {
       debugPrint('[ADD_TRANSACTION] Image pick error: $e');
@@ -235,7 +248,35 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
     if (result != null && mounted) {
       setState(() {
-        _selectedDate = result;
+        _selectedDate = DateTime(
+          result.year,
+          result.month,
+          result.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    if (_saving) return;
+
+    final result = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDate),
+      helpText: 'Chọn giờ giao dịch',
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _selectedDate = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          result.hour,
+          result.minute,
+        );
       });
     }
   }
@@ -297,6 +338,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       final categoryId = _selectedCategoryId!;
       final categoryName = selectedCategory.first['name']?.toString() ?? 'Khác';
       final walletId = _selectedWalletId!;
+      final title = _titleController.text.trim();
       final note = _noteController.text.trim();
       final delta = _type == 'income' ? amount : -amount;
 
@@ -324,6 +366,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           'categoryId': categoryId,
           'categoryName': categoryName,
           'walletId': walletId,
+          'title': title,
           'note': note,
           'date': Timestamp.fromDate(_selectedDate),
           'imagePath': _imagePath,
@@ -439,6 +482,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           ),
           const SizedBox(height: 14),
           TextField(
+            controller: _titleController,
+            enabled: !_saving,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: _inputDecoration(
+              hint: 'Tên món / nội dung',
+              icon: Icons.receipt_long_outlined,
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
             controller: _noteController,
             enabled: !_saving,
             maxLines: 2,
@@ -510,22 +563,49 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   },
           ),
           const SizedBox(height: 14),
-          InkWell(
-            onTap: _pickDate,
-            borderRadius: BorderRadius.circular(14),
-            child: InputDecorator(
-              decoration: _inputDecoration(
-                hint: 'Ngày',
-                icon: Icons.calendar_today_outlined,
-              ),
-              child: Text(
-                _formatDate(_selectedDate),
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: AppColors.textPrimary,
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _pickDate,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InputDecorator(
+                    decoration: _inputDecoration(
+                      hint: 'Ngày',
+                      icon: Icons.calendar_today_outlined,
+                    ),
+                    child: Text(
+                      _formatDate(_selectedDate),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: InkWell(
+                  onTap: _pickTime,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InputDecorator(
+                    decoration: _inputDecoration(
+                      hint: 'Giờ',
+                      icon: Icons.access_time,
+                    ),
+                    child: Text(
+                      '${_selectedDate.hour.toString().padLeft(2, '0')}:'
+                      '${_selectedDate.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           const Text(
@@ -657,6 +737,60 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     );
   }
 
+  Widget _emptySetupState(BuildContext context) {
+    final missingCategories = _categories.isEmpty;
+    final missingWallets = _wallets.isEmpty;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 52,
+              color: AppColors.primary,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Chưa thể thêm giao dịch',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              [
+                if (missingCategories) 'Bạn cần có ít nhất một danh mục.',
+                if (missingWallets) 'Bạn cần tạo ít nhất một ví.',
+              ].join('\n'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            if (missingCategories)
+              FilledButton.icon(
+                onPressed: () async {
+                  await context.push(AppRouter.categories);
+                  if (mounted) _loadData();
+                },
+                icon: const Icon(Icons.category_outlined),
+                label: const Text('Quản lý danh mục'),
+              ),
+            if (missingWallets)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await context.push(AppRouter.wallets);
+                  if (mounted) _loadData();
+                },
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                label: const Text('Tạo ví'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -701,6 +835,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                   ),
                 )
+              : (_categories.isEmpty || _wallets.isEmpty)
+              ? _emptySetupState(context)
               : _buildForm(),
         ),
       ),

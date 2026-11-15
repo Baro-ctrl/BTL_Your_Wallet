@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -8,7 +7,7 @@ String formatVnd(int amount) {
   final digits = amount.abs().toString();
   final formatted = digits.replaceAllMapped(
     RegExp(r'\B(?=(\d{3})+(?!\d))'),
-        (match) => '.',
+    (match) => '.',
   );
   return '${negative ? '-' : ''}$formatted đ';
 }
@@ -59,9 +58,7 @@ class FinanceTitle extends StatelessWidget {
 void showDemoNotice(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(
-      content: Text(
-        'Đây là giao diện demo. Chưa lưu vào Firebase.',
-      ),
+      content: Text('Đây là giao diện demo. Chưa lưu vào Firebase.'),
     ),
   );
 }

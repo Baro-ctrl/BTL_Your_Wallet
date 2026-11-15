@@ -1,45 +1,39 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'firebase_options.dart';
 import 'app/app_router.dart';
-import 'theme/app_theme.dart';
+import 'firebase_options.dart';
 import 'providers/expense_provider.dart';
-
-// ==========================================
-// 1. KHỞI ĐỘNG ỨNG DỤNG
-// ==========================================
+import 'services/theme_controller.dart';
+import 'theme/your_wallet_themes.dart';
 
 Future<void> main() async {
-  // Đảm bảo Flutter đã khởi tạo.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Hiển thị lỗi trong quá trình khởi tạo.
   try {
-    // Kết nối Firebase theo nền tảng hiện tại.
-    await Firebase.initializeApp(
+    final firebaseApp = await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    // Firebase thành công -> chạy ứng dụng.
-    runApp(const MyApp());
-  } catch (error) {
-    // Firebase thất bại -> hiển thị màn báo lỗi.
-    runApp(
-      FirebaseErrorApp(
-        errorMessage: error.toString(),
-      ),
-    );
+    if (kDebugMode) {
+      debugPrint('[FIREBASE] Project: ${firebaseApp.options.projectId}');
+    }
+
+    await ThemeController.instance.initialize();
+    runApp(const YourWalletApp());
+  } catch (error, stackTrace) {
+    if (kDebugMode) {
+      debugPrint('[STARTUP ERROR] $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    runApp(FirebaseErrorApp(errorMessage: error.toString()));
   }
 }
 
-// ==========================================
-// 2. YOUR WALLET APP
-// ==========================================
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class YourWalletApp extends StatelessWidget {
+  const YourWalletApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -47,60 +41,34 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
       ],
-      child: MaterialApp.router(
-        // Tắt chữ DEBUG.
-        debugShowCheckedModeBanner: false,
-
-        // Tên ứng dụng.
-        title: 'Your Wallet',
-
-        // Giao diện sáng theo Figma.
-        theme: AppTheme.lightTheme,
-
-        // Không tự đổi sang giao diện tối.
-        themeMode: ThemeMode.light,
-
-        // Cấu hình toàn bộ đường dẫn.
-        routerConfig: AppRouter.router,
-
-        // Tránh xuất hiện nhãn debug.
-        builder: (context, child) {
-          return child ?? const SizedBox.shrink();
+      child: AnimatedBuilder(
+        animation: ThemeController.instance,
+        builder: (context, _) {
+          return MaterialApp.router(
+            title: 'Your Wallet',
+            debugShowCheckedModeBanner: false,
+            theme: YourWalletThemes.light,
+            darkTheme: YourWalletThemes.dark,
+            themeMode: ThemeController.instance.themeMode,
+            routerConfig: AppRouter.router,
+          );
         },
       ),
     );
   }
 }
 
-// ==========================================
-// 3. MÀN HÌNH LỖI FIREBASE
-// ==========================================
-
 class FirebaseErrorApp extends StatelessWidget {
   final String errorMessage;
 
-  const FirebaseErrorApp({
-    super.key,
-    required this.errorMessage,
-  });
+  const FirebaseErrorApp({super.key, required this.errorMessage});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Your Wallet',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4096F5),
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF4F8FF),
-      ),
       home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Your Wallet'),
-          centerTitle: true,
-        ),
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -110,88 +78,39 @@ class FirebaseErrorApp extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Biểu tượng lỗi.
-                    Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEBEE),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Icon(
-                        Icons.cloud_off_rounded,
-                        size: 48,
-                        color: Colors.redAccent,
-                      ),
+                    const Icon(
+                      Icons.cloud_off_rounded,
+                      size: 64,
+                      color: Colors.redAccent,
                     ),
-
-                    const SizedBox(height: 24),
-
+                    const SizedBox(height: 16),
                     const Text(
-                      'Không thể kết nối Firebase',
+                      'Không thể khởi động ứng dụng',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
                     const Text(
-                      'Ứng dụng chưa khởi tạo được Firebase. '
-                      'Vui lòng kiểm tra cấu hình Firebase '
-                      'và kết nối mạng.',
+                      'Vui lòng kiểm tra cấu hình Firebase và kết nối mạng.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.black54,
-                        height: 1.5,
-                      ),
                     ),
-
-                    const SizedBox(height: 24),
-
-                    // Chi tiết lỗi giúp kiểm tra khi phát triển.
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(0xFFE0E6EF),
-                        ),
-                      ),
-                      child: SelectableText(
-                        errorMessage,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.redAccent,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    FilledButton.icon(
-                      onPressed: () {
-                        // Thử khởi tạo Firebase lại.
-                        main();
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Thử kết nối lại'),
-                    ),
-
                     const SizedBox(height: 16),
-
-                    const Text(
-                      'Your Wallet - Quản lý chi tiêu thông minh',
+                    SelectableText(
+                      errorMessage,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: Colors.black45,
+                        color: Colors.redAccent,
                       ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: main,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Thử lại'),
                     ),
                   ],
                 ),

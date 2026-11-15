@@ -177,15 +177,21 @@ class HomeScreen extends StatelessWidget {
 
             int income = 0;
             int expense = 0;
+            int currentMonthExpense = 0;
+            final now = DateTime.now();
 
             for (final doc in transactions) {
               final data = doc.data();
               final amount = _toAmount(data['amount']);
+              final date = _toDate(data['date']);
 
               if (data['type'] == 'income') {
                 income += amount;
               } else if (data['type'] == 'expense') {
                 expense += amount;
+                if (date.year == now.year && date.month == now.month) {
+                  currentMonthExpense += amount;
+                }
               }
             }
 
@@ -212,12 +218,37 @@ class HomeScreen extends StatelessWidget {
                       totalAmount + _toAmount(doc.data()['balance']),
                 );
 
-                return _buildHome(
-                  context,
-                  walletBalance,
-                  income,
-                  expense,
-                  transactions,
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: userRef.collection('budgets').snapshots(),
+                  builder: (context, budgetSnapshot) {
+                    if (budgetSnapshot.hasError) {
+                      return _errorScreen(
+                        'Không tải được ngân sách:\n${budgetSnapshot.error}',
+                      );
+                    }
+                    if (!budgetSnapshot.hasData) return _loadingScreen();
+
+                    final monthlyBudget = budgetSnapshot.data!.docs
+                        .where((doc) {
+                          final data = doc.data();
+                          return _toAmount(data['year']) == now.year &&
+                              _toAmount(data['month']) == now.month;
+                        })
+                        .fold<int>(
+                          0,
+                          (total, doc) => total + _toAmount(doc.data()['amount']),
+                        );
+
+                    return _buildHome(
+                      context,
+                      walletBalance,
+                      income,
+                      expense,
+                      currentMonthExpense,
+                      monthlyBudget,
+                      transactions,
+                    );
+                  },
                 );
               },
             );
@@ -301,6 +332,8 @@ class HomeScreen extends StatelessWidget {
     int walletBalance,
     int income,
     int expense,
+    int currentMonthExpense,
+    int monthlyBudget,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -378,6 +411,10 @@ class HomeScreen extends StatelessWidget {
           children: [
             // THẺ TỔNG SỐ DƯ
             _balanceCard(walletBalance, income, expense),
+
+            const SizedBox(height: 16),
+
+            _monthBudgetCard(context, currentMonthExpense, monthlyBudget),
 
             const SizedBox(height: 16),
 
@@ -700,6 +737,70 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _monthBudgetCard(
+    BuildContext context,
+    int spent,
+    int budget,
+  ) {
+    final remaining = budget > spent ? budget - spent : 0;
+    final progress = budget > 0 ? (spent / budget).clamp(0.0, 1.0) : 0.0;
+    final exceeded = budget > 0 && spent > budget;
+
+    return FinanceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Chi tiêu tháng này',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              TextButton(
+                onPressed: () => context.push(AppRouter.setBudget),
+                child: Text(budget == 0 ? 'Đặt mục tiêu' : 'Ngân sách'),
+              ),
+            ],
+          ),
+          Text(
+            formatVnd(spent),
+            style: TextStyle(
+              color: exceeded ? AppColors.expense : AppColors.primaryDark,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (budget == 0)
+            const Text(
+              'Chưa đặt ngân sách tháng này.',
+              style: TextStyle(color: AppColors.textSecondary),
+            )
+          else ...[
+            LinearProgressIndicator(
+              value: progress,
+              color: exceeded ? AppColors.expense : AppColors.primary,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              exceeded
+                  ? 'Đã vượt ngân sách ${formatVnd(spent - budget)} '
+                      '(hạn mức ${formatVnd(budget)})'
+                  : 'Còn lại ${formatVnd(remaining)} / ${formatVnd(budget)}',
+              style: TextStyle(
+                color: exceeded ? AppColors.expense : AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // ==========================================
   // 8. THẺ SỐ DƯ
   // ==========================================
@@ -862,7 +963,9 @@ class HomeScreen extends StatelessWidget {
     final date = _toDate(data['date']);
 
     final category = _categoryName(data);
-    final note = data['note']?.toString().trim() ?? '';
+    final note = data['title']?.toString().trim().isNotEmpty == true
+        ? data['title'].toString().trim()
+        : data['note']?.toString().trim() ?? '';
 
     final icon = _categoryIcon(data);
 

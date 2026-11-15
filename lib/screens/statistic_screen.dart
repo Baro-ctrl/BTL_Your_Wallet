@@ -3,9 +3,16 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../app/app_router.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_bottom_nav.dart';
 import '../widgets/finance_ui.dart';
+
+// ==========================================
+// MÀN HÌNH THỐNG KÊ
+// ==========================================
 
 class StatisticScreen extends StatefulWidget {
   const StatisticScreen({super.key});
@@ -31,7 +38,15 @@ class _StatisticScreenState extends State<StatisticScreen> {
   ];
 
   // ==========================================
-  // 1. HÀM HỖ TRỢ
+  // 1. NÚT QUAY VỀ TRANG CHỦ
+  // ==========================================
+
+  void goHome() {
+    context.go(AppRouter.home);
+  }
+
+  // ==========================================
+  // 2. CHỌN THÁNG
   // ==========================================
 
   void changeMonth(int offset) {
@@ -43,6 +58,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
     });
   }
 
+  // ==========================================
+  // 3. CHUYỂN DỮ LIỆU SỐ TIỀN
+  // ==========================================
+
   int toAmount(dynamic value) {
     if (value is num) {
       return value.toInt();
@@ -50,6 +69,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
     return int.tryParse(value?.toString().replaceAll('.', '') ?? '') ?? 0;
   }
+
+  // ==========================================
+  // 4. CHUYỂN DỮ LIỆU NGÀY
+  // ==========================================
 
   DateTime? toDate(dynamic value) {
     if (value is Timestamp) {
@@ -66,6 +89,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
     return null;
   }
+
+  // ==========================================
+  // 5. TÊN DANH MỤC
+  // ==========================================
 
   String categoryName(
     String id,
@@ -99,7 +126,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 2. TÍNH TOÁN THỐNG KÊ
+  // 6. TÍNH TOÁN DỮ LIỆU THỐNG KÊ
   // ==========================================
 
   _StatisticData calculateStatistics(
@@ -107,14 +134,12 @@ class _StatisticScreenState extends State<StatisticScreen> {
   ) {
     int income = 0;
     int expense = 0;
+    int transactionCount = 0;
 
     final expensesByCategory = <String, int>{};
     final savedCategoryNames = <String, String>{};
-
     final dailyIncome = <int, int>{};
     final dailyExpense = <int, int>{};
-
-    int transactionCount = 0;
 
     for (final doc in transactions) {
       final data = doc.data();
@@ -129,17 +154,22 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
       final amount = toAmount(data['amount']);
 
-      if (amount <= 0) continue;
+      if (amount <= 0) {
+        continue;
+      }
 
       transactionCount++;
 
       final type = data['type'];
 
+      // THU NHẬP
       if (type == 'income') {
         income += amount;
 
         dailyIncome[date.day] = (dailyIncome[date.day] ?? 0) + amount;
-      } else if (type == 'expense') {
+      }
+      // CHI TIÊU
+      else if (type == 'expense') {
         expense += amount;
 
         dailyExpense[date.day] = (dailyExpense[date.day] ?? 0) + amount;
@@ -168,10 +198,12 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 3. THẺ TỔNG QUAN
+  // 7. THẺ THU NHẬP / CHI TIÊU
   // ==========================================
 
   Widget summaryCard(String title, int amount, Color color, IconData icon) {
+    final scheme = Theme.of(context).colorScheme;
+
     return FinanceCard(
       child: Column(
         children: [
@@ -179,10 +211,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
           const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -205,7 +234,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 4. BỘ CHỌN THÁNG
+  // 8. BỘ CHỌN THÁNG
   // ==========================================
 
   Widget monthSelector() {
@@ -214,6 +243,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
+            tooltip: 'Tháng trước',
             onPressed: () => changeMonth(-1),
             icon: const Icon(Icons.chevron_left),
           ),
@@ -223,6 +253,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
           IconButton(
+            tooltip: 'Tháng sau',
             onPressed: () => changeMonth(1),
             icon: const Icon(Icons.chevron_right),
           ),
@@ -232,13 +263,14 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 5. THẺ CHÊNH LỆCH THU CHI
+  // 9. CHÊNH LỆCH THU - CHI
   // ==========================================
 
   Widget balanceDifference(_StatisticData data) {
     final difference = data.income - data.expense;
-
     final positive = difference >= 0;
+
+    final scheme = Theme.of(context).colorScheme;
 
     return FinanceCard(
       child: Row(
@@ -258,10 +290,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Chênh lệch thu - chi trong tháng',
                   style: TextStyle(
-                    color: AppColors.textSecondary,
+                    color: scheme.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),
@@ -284,13 +316,15 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 6. BIỂU ĐỒ TRÒN CHI TIÊU
+  // 10. BIỂU ĐỒ TRÒN CHI TIÊU
   // ==========================================
 
   Widget expensePieChart(
     _StatisticData data,
     Map<String, String> categoryNames,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+
     final entries = data.expensesByCategory.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -307,15 +341,16 @@ class _StatisticScreenState extends State<StatisticScreen> {
                   painter: _ExpensePiePainter(
                     values: entries.map((entry) => entry.value).toList(),
                     colors: chartColors,
+                    emptyColor: scheme.surfaceContainerHighest,
                   ),
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text(
+                        Text(
                           'Tổng chi',
                           style: TextStyle(
-                            color: AppColors.textSecondary,
+                            color: scheme.onSurfaceVariant,
                             fontSize: 12,
                           ),
                         ),
@@ -340,15 +375,17 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
           const SizedBox(height: 16),
 
+          // CHƯA CÓ CHI TIÊU
           if (entries.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
+            Padding(
+              padding: const EdgeInsets.all(12),
               child: Text(
                 'Chưa có dữ liệu chi tiêu tháng này',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: scheme.onSurfaceVariant),
               ),
             ),
 
+          // PHÂN BỔ THEO DANH MỤC
           ...entries.asMap().entries.map((entry) {
             final index = entry.key;
             final item = entry.value;
@@ -381,9 +418,9 @@ class _StatisticScreenState extends State<StatisticScreen> {
                   ),
                   Text(
                     '${percent.toStringAsFixed(1)}%',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.textSecondary,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -408,10 +445,12 @@ class _StatisticScreenState extends State<StatisticScreen> {
   }
 
   // ==========================================
-  // 7. BIỂU ĐỒ THU CHI THEO NGÀY
+  // 11. BIỂU ĐỒ THU CHI THEO NGÀY
   // ==========================================
 
   Widget dailyChart(_StatisticData data) {
+    final scheme = Theme.of(context).colorScheme;
+
     final daysInMonth = DateTime(
       selectedMonth.year,
       selectedMonth.month + 1,
@@ -437,16 +476,14 @@ class _StatisticScreenState extends State<StatisticScreen> {
             'Thu chi theo ngày',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-
           const SizedBox(height: 8),
-
-          const Text(
+          Text(
             'Kéo ngang để xem toàn bộ các ngày trong tháng',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
           ),
-
           const SizedBox(height: 16),
 
+          // CHÚ THÍCH
           Row(
             children: [
               _legend('Thu nhập', AppColors.income),
@@ -457,6 +494,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
           const SizedBox(height: 20),
 
+          // BIỂU ĐỒ CỘT THEO NGÀY
           SizedBox(
             height: 190,
             child: SingleChildScrollView(
@@ -489,6 +527,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
+                              // CỘT THU NHẬP
                               Expanded(
                                 child: Container(
                                   height: incomeHeight,
@@ -500,7 +539,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
                                   ),
                                 ),
                               ),
+
                               const SizedBox(width: 3),
+
+                              // CỘT CHI TIÊU
                               Expanded(
                                 child: Container(
                                   height: expenseHeight,
@@ -515,12 +557,14 @@ class _StatisticScreenState extends State<StatisticScreen> {
                             ],
                           ),
                         ),
+
                         const SizedBox(height: 8),
+
                         Text(
                           '$day',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: AppColors.textSecondary,
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -533,10 +577,10 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
           if (maxAmount == 0) ...[
             const SizedBox(height: 12),
-            const Center(
+            Center(
               child: Text(
                 'Chưa có giao dịch trong tháng này',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
               ),
             ),
           ],
@@ -545,7 +589,13 @@ class _StatisticScreenState extends State<StatisticScreen> {
     );
   }
 
+  // ==========================================
+  // 12. CHÚ THÍCH BIỂU ĐỒ
+  // ==========================================
+
   Widget _legend(String name, Color color) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -560,23 +610,56 @@ class _StatisticScreenState extends State<StatisticScreen> {
         const SizedBox(width: 6),
         Text(
           name,
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
         ),
       ],
     );
   }
 
   // ==========================================
-  // 8. GIAO DIỆN THỐNG KÊ CHÍNH
+  // 13. APP BAR - NÚT QUAY VỀ HOME
+  // ==========================================
+
+  PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      centerTitle: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      foregroundColor: scheme.onSurface,
+
+      // QUAY LẠI Ở GÓC TRÊN BÊN TRÁI
+      leading: IconButton(
+        tooltip: 'Về Trang chủ',
+        icon: const Icon(Icons.arrow_back_rounded, size: 25),
+        onPressed: goHome,
+      ),
+
+      title: const Text(
+        'Thống kê',
+        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // ==========================================
+  // 14. GIAO DIỆN THỐNG KÊ CHÍNH
   // ==========================================
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     if (user == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Thống kê')),
+        appBar: _buildAppBar(),
         body: const Center(child: Text('Vui lòng đăng nhập.')),
       );
     }
@@ -584,8 +667,11 @@ class _StatisticScreenState extends State<StatisticScreen> {
     final userRef = _db.collection('users').doc(user.uid);
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(title: const Text('Thống kê')),
+      backgroundColor: theme.scaffoldBackgroundColor,
+
+      // NÚT QUAY LẠI PHÍA TRÊN
+      appBar: _buildAppBar(),
+
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: userRef.collection('transactions').snapshots(),
         builder: (context, transactionSnapshot) {
@@ -620,7 +706,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              // Tên danh mục từ Firestore.
+              // TÊN DANH MỤC FIRESTORE
               final categoryNames = <String, String>{};
 
               for (final doc in categorySnapshot.data!.docs) {
@@ -628,16 +714,18 @@ class _StatisticScreenState extends State<StatisticScreen> {
                     doc.data()['name']?.toString() ?? 'Khác';
               }
 
-              // Tính từ giao dịch của tháng được chọn.
+              // TÍNH THỐNG KÊ THÁNG
               final data = calculateStatistics(transactionSnapshot.data!.docs);
 
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  // CHỌN THÁNG
                   monthSelector(),
 
                   const SizedBox(height: 16),
 
+                  // TỔNG THU NHẬP VÀ CHI TIÊU
                   Row(
                     children: [
                       Expanded(
@@ -662,6 +750,7 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
                   const SizedBox(height: 12),
 
+                  // CHÊNH LỆCH THU CHI
                   balanceDifference(data),
 
                   const SizedBox(height: 22),
@@ -670,10 +759,12 @@ class _StatisticScreenState extends State<StatisticScreen> {
 
                   const SizedBox(height: 12),
 
+                  // BIỂU ĐỒ TRÒN
                   expensePieChart(data, categoryNames),
 
                   const SizedBox(height: 24),
 
+                  // BIỂU ĐỒ THEO NGÀY
                   dailyChart(data),
 
                   const SizedBox(height: 22),
@@ -683,8 +774,8 @@ class _StatisticScreenState extends State<StatisticScreen> {
                       '${data.transactionCount} giao dịch '
                       'trong ${selectedMonth.month}/'
                       '${selectedMonth.year}',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -697,13 +788,16 @@ class _StatisticScreenState extends State<StatisticScreen> {
           );
         },
       ),
+
+      // THANH ĐIỀU HƯỚNG 5 NÚT
+      bottomNavigationBar: const AppBottomNav(),
     );
   }
 }
 
-// ============================================
-// 9. DỮ LIỆU THỐNG KÊ ĐÃ TÍNH
-// ============================================
+// ==========================================
+// 15. MODEL THỐNG KÊ
+// ==========================================
 
 class _StatisticData {
   final int income;
@@ -727,18 +821,25 @@ class _StatisticData {
   });
 }
 
-// ============================================
-// 10. VẼ BIỂU ĐỒ TRÒN
-// ============================================
+// ==========================================
+// 16. VẼ BIỂU ĐỒ TRÒN
+// ==========================================
 
 class _ExpensePiePainter extends CustomPainter {
   final List<int> values;
   final List<Color> colors;
+  final Color emptyColor;
 
-  _ExpensePiePainter({required this.values, required this.colors});
+  _ExpensePiePainter({
+    required this.values,
+    required this.colors,
+    required this.emptyColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
+    // ĐÃ SỬA CẢNH BÁO:
+    // Không dùng tên tham số "sum".
     final total = values.fold<int>(
       0,
       (totalAmount, value) => totalAmount + value,
@@ -755,14 +856,18 @@ class _ExpensePiePainter extends CustomPainter {
       ..strokeWidth = 27
       ..strokeCap = StrokeCap.butt;
 
+    // KHÔNG CÓ DỮ LIỆU
     if (total <= 0) {
-      paint.color = const Color(0xFFE5ECF6);
+      paint.color = emptyColor;
+
       canvas.drawCircle(center, radius, paint);
+
       return;
     }
 
     double startAngle = -math.pi / 2;
 
+    // VẼ CÁC PHẦN DANH MỤC
     for (var i = 0; i < values.length; i++) {
       final sweepAngle = values[i] / total * 2 * math.pi;
 
@@ -776,6 +881,10 @@ class _ExpensePiePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ExpensePiePainter oldDelegate) {
+    if (oldDelegate.emptyColor != emptyColor) {
+      return true;
+    }
+
     if (oldDelegate.values.length != values.length ||
         oldDelegate.colors.length != colors.length) {
       return true;

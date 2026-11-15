@@ -119,7 +119,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     final amount = _amount(data['amount']);
     final date = _date(data['date']);
     final category = _categoryName(data);
-    final note = data['note']?.toString().trim() ?? '';
+    final note = data['title']?.toString().trim().isNotEmpty == true
+        ? data['title'].toString().trim()
+        : data['note']?.toString().trim() ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

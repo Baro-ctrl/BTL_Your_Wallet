@@ -22,7 +22,10 @@ class DefaultDataService {
 
     final markerRef = userRef.collection('metadata').doc('setup');
 
-    // DANH MỤC CHI TIÊU
+    // ==========================================
+    // 1. DANH MỤC CHI TIÊU MẶC ĐỊNH
+    // ==========================================
+
     final categories = <CategoryModel>[
       CategoryModel(
         id: 'food',
@@ -33,6 +36,7 @@ class DefaultDataService {
         color: 0xFFFF9800,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'drink',
         userId: userId,
@@ -42,6 +46,7 @@ class DefaultDataService {
         color: 0xFF2196F3,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'transport',
         userId: userId,
@@ -51,6 +56,7 @@ class DefaultDataService {
         color: 0xFF4CAF50,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'shopping',
         userId: userId,
@@ -60,6 +66,7 @@ class DefaultDataService {
         color: 0xFF9C27B0,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'other',
         userId: userId,
@@ -70,7 +77,9 @@ class DefaultDataService {
         isDefault: true,
       ),
 
-      // DANH MỤC THU NHẬP
+      // ======================================
+      // 2. DANH MỤC THU NHẬP
+      // ======================================
       CategoryModel(
         id: 'salary',
         userId: userId,
@@ -80,6 +89,7 @@ class DefaultDataService {
         color: 0xFF4CAF50,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'bonus',
         userId: userId,
@@ -89,6 +99,7 @@ class DefaultDataService {
         color: 0xFF2196F3,
         isDefault: true,
       ),
+
       CategoryModel(
         id: 'other_income',
         userId: userId,
@@ -100,7 +111,10 @@ class DefaultDataService {
       ),
     ];
 
-    // VÍ MẶC ĐỊNH
+    // ==========================================
+    // 3. VÍ TIỀN MẶT MẶC ĐỊNH
+    // ==========================================
+
     final defaultWallet = WalletModel(
       id: 'cash',
       userId: userId,
@@ -111,50 +125,69 @@ class DefaultDataService {
       createdAt: DateTime.now(),
     );
 
+    final walletRef = userRef.collection('wallets').doc('cash');
+
+    final categoryRefs = categories.map((category) {
+      return userRef.collection('categories').doc(category.id);
+    }).toList();
+
     // ==========================================
-    // FIRESTORE TRANSACTION
+    // 4. FIRESTORE TRANSACTION
     // ==========================================
 
     await _firestore.runTransaction((transaction) async {
-      // BƯỚC 1: ĐỌC TẤT CẢ DOCUMENT TRƯỚC KHI GHI
+      // ======================================
+      // BƯỚC 1: ĐỌC TẤT CẢ DOCUMENT
+      // ======================================
+
       final markerSnapshot = await transaction.get(markerRef);
 
-      if (markerSnapshot.exists) {
-        return;
-      }
-
-      final walletRef = userRef.collection('wallets').doc(defaultWallet.id);
-
       final walletSnapshot = await transaction.get(walletRef);
-
-      final categoryRefs = categories
-          .map((category) => userRef.collection('categories').doc(category.id))
-          .toList();
 
       final categorySnapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
 
       for (final ref in categoryRefs) {
-        categorySnapshots.add(await transaction.get(ref));
+        final snapshot = await transaction.get(ref);
+        categorySnapshots.add(snapshot);
       }
 
-      // BƯỚC 2: CHỈ TẠO DANH MỤC CHƯA TỒN TẠI
-      for (var index = 0; index < categories.length; index++) {
-        if (!categorySnapshots[index].exists) {
-          transaction.set(categoryRefs[index], categories[index].toMap());
+      // ======================================
+      // BƯỚC 2: KIỂM TRA DANH MỤC
+      // ======================================
+
+      for (var i = 0; i < categories.length; i++) {
+        if (!categorySnapshots[i].exists) {
+          transaction.set(categoryRefs[i], categories[i].toMap());
         }
       }
 
-      // BƯỚC 3: CHỈ TẠO VÍ KHI CHƯA TỒN TẠI
+      // ======================================
+      // BƯỚC 3: KIỂM TRA VÍ TIỀN MẶT
+      // ======================================
+
       if (!walletSnapshot.exists) {
         transaction.set(walletRef, defaultWallet.toMap());
       }
 
-      // BƯỚC 4: ĐÁNH DẤU ĐÃ KHỞI TẠO
-      transaction.set(markerRef, {
-        'initialized': true,
-        'version': 2,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // ======================================
+      // BƯỚC 4: KIỂM TRA METADATA
+      // ======================================
+
+      final markerData = markerSnapshot.data();
+
+      final currentVersion = markerData?['version'] is int
+          ? markerData!['version'] as int
+          : 0;
+
+      if (!markerSnapshot.exists ||
+          currentVersion < 2 ||
+          markerData?['initialized'] != true) {
+        transaction.set(markerRef, {
+          'initialized': true,
+          'version': 2,
+          if (!markerSnapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
     });
   }
 }

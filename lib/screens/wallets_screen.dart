@@ -328,6 +328,33 @@ class _WalletsScreenState extends State<WalletsScreen> {
       return;
     }
 
+    QuerySnapshot<Map<String, dynamic>> linkedTransactions;
+    try {
+      linkedTransactions = await _db
+          .collection('users')
+          .doc(_uid)
+          .collection('transactions')
+          .where('walletId', isEqualTo: wallet.id)
+          .limit(1)
+          .get();
+    } on FirebaseException catch (error) {
+      _showMessage(
+        'Không thể kiểm tra giao dịch của ví: '
+        '${error.message ?? error.code}',
+      );
+      return;
+    }
+
+    if (linkedTransactions.docs.isNotEmpty) {
+      _showMessage(
+        'Ví đang được giao dịch sử dụng. '
+        'Hãy chuyển các giao dịch sang ví khác trước khi xóa.',
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
     final data = wallet.data();
     final name = data['name']?.toString() ?? 'ví này';
     final isDefault = data['isDefault'] == true;

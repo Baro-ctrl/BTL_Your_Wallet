@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class TransactionModel {
   final String id;
   final String userId;
@@ -5,10 +7,10 @@ class TransactionModel {
   final String walletId;
   final int amount; // Số nguyên (đồng) theo đúng thiết kế của A
   final String type; // 'expense' hoặc 'income'
+  final String title;
   final String note;
   final DateTime date;
-  final String?
-  imagePath; // Thêm trường này cho tính năng ảnh khoảnh khắc của B
+  final String? imagePath;
 
   TransactionModel({
     required this.id,
@@ -17,6 +19,7 @@ class TransactionModel {
     required this.walletId,
     required this.amount,
     required this.type,
+    this.title = '',
     required this.note,
     required this.date,
     this.imagePath,
@@ -24,6 +27,15 @@ class TransactionModel {
 
   // Chuyển dữ liệu từ Firestore thành đối tượng Dart
   factory TransactionModel.fromMap(Map<String, dynamic> map) {
+    final rawDate = map['date'];
+    final date = switch (rawDate) {
+      Timestamp value => value.toDate(),
+      DateTime value => value,
+      String value when DateTime.tryParse(value) != null =>
+        DateTime.parse(value),
+      _ => throw FormatException('Invalid transaction date: $rawDate'),
+    };
+
     return TransactionModel(
       id: map['id'] as String,
       userId: map['userId'] as String,
@@ -31,8 +43,9 @@ class TransactionModel {
       walletId: map['walletId'] as String,
       amount: (map['amount'] as num).toInt(),
       type: map['type'] as String,
-      note: map['note'] as String,
-      date: DateTime.parse(map['date'] as String),
+      title: map['title']?.toString() ?? '',
+      note: map['note']?.toString() ?? '',
+      date: date,
       imagePath: map['imagePath'] as String?,
     );
   }
@@ -46,6 +59,7 @@ class TransactionModel {
       'walletId': walletId,
       'amount': amount,
       'type': type,
+      'title': title,
       'note': note,
       'date': date.toIso8601String(),
       'imagePath': imagePath,

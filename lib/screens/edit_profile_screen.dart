@@ -1,10 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../theme/app_colors.dart';
-import '../widgets/finance_ui.dart';
+import '../app/app_router.dart';
+import '../services/auth_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -14,20 +18,24 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _nameController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
 
-  final TextEditingController _emailController = TextEditingController();
+  final _picker = ImagePicker();
+  final _authService = AuthService();
 
-  final TextEditingController _phoneController = TextEditingController();
+  XFile? _selectedImage;
+  Uint8List? _imageBytes;
 
-  String _photoUrl = '';
+  String _avatarUrl = '';
 
-  bool _loading = true;
-  bool _saving = false;
-  String? _loadError;
+  bool _loading = false;
+  bool _initializing = true;
+
+  User? get _user => FirebaseAuth.instance.currentUser;
 
   @override
   void initState() {
@@ -43,191 +51,159 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  // ==========================================
-  // 1. KIỂM TRA ĐƯỜNG DẪN ẢNH
-  // ==========================================
-
-  bool _isValidImageUrl(String value) {
-    if (value.isEmpty) return true;
-
-    final uri = Uri.tryParse(value);
-
-    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
-  }
-
-  // ==========================================
-  // 2. TẢI THÔNG TIN TÀI KHOẢN
-  // ==========================================
-
-  Future<void> _loadProfile() async {
-    if (!mounted) return;
-
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
-
-    try {
-      final user = _auth.currentUser;
-
-      if (user == null) {
-        throw StateError('Bạn chưa đăng nhập.');
-      }
-
-      final profile = await _db.collection('users').doc(user.uid).get();
-
-      final data = profile.data() ?? {};
-
-      final firestoreName = data['name']?.toString().trim() ?? '';
-
-      final authName = user.displayName?.trim() ?? '';
-
-      final firestorePhone = data['phone']?.toString().trim() ?? '';
-
-      final firestorePhoto = data['avatarUrl']?.toString().trim() ?? '';
-
-      if (!mounted) return;
-
-      setState(() {
-        _nameController.text = firestoreName.isNotEmpty
-            ? firestoreName
-            : authName;
-
-        _emailController.text = user.email ?? '';
-
-        _phoneController.text = firestorePhone.isNotEmpty
-            ? firestorePhone
-            : (user.phoneNumber ?? '');
-
-        _photoUrl = firestorePhoto.isNotEmpty
-            ? firestorePhoto
-            : (user.photoURL ?? '');
-
-        _loading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        _loadError = error.toString();
-        _loading = false;
-      });
-
-      debugPrint('[PROFILE] Load error: $error');
-    }
-  }
-
-  // ==========================================
-  // 3. HIỂN THỊ THÔNG BÁO
-  // ==========================================
-
   void _showMessage(String message) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ==========================================
-  // 4. THAY ĐỔI URL ẢNH ĐẠI DIỆN
+  // TẢI HỒ SƠ
   // ==========================================
 
-  Future<void> _changeAvatar() async {
-    if (_saving) return;
+  Future<void> _loadProfile() async {
+    final user = _user;
 
-    final controller = TextEditingController(text: _photoUrl);
+    if (user == null) {
+      if (mounted) {
+        setState(() => _initializing = false);
+      }
+      return;
+    }
 
     try {
-      final result = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Ảnh đại diện'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Nhập đường dẫn HTTPS của ảnh '
-                  'bạn muốn dùng làm ảnh đại diện.',
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.url,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'URL ảnh',
-                    hintText: 'https://example.com/avatar.jpg',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Để trống nếu muốn bỏ ảnh đại diện.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Hủy'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final url = controller.text.trim();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
-                  if (!_isValidImageUrl(url)) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Vui lòng nhập URL HTTPS hợp lệ.'),
-                      ),
-                    );
-                    return;
-                  }
+      if (!mounted) return;
 
-                  Navigator.pop(dialogContext, url);
-                },
-                child: const Text('Chọn ảnh'),
-              ),
-            ],
-          );
-        },
-      );
+      final data = snapshot.data() ?? {};
 
-      if (!mounted || result == null) return;
+      _nameController.text =
+          (data['name'] as String?) ?? user.displayName ?? '';
 
-      setState(() {
-        _photoUrl = result;
-      });
+      _emailController.text = user.email ?? '';
 
-      _showMessage(
-        'Đã chọn ảnh. Nhấn Lưu thay đổi '
-        'để cập nhật hồ sơ.',
-      );
+      _phoneController.text =
+          user.phoneNumber ?? (data['phone'] as String?) ?? '';
+
+      _avatarUrl = (data['avatarUrl'] as String?) ?? user.photoURL ?? '';
+    } catch (error) {
+      _showMessage('Không tải được hồ sơ: $error');
     } finally {
-      // Chờ khung hình kế tiếp sau khi hộp thoại
-      // đã đóng trước khi hủy controller.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.dispose();
-      });
+      if (mounted) {
+        setState(() => _initializing = false);
+      }
     }
   }
 
   // ==========================================
-  // 5. LƯU HỒ SƠ LÊN FIREBASE
+  // CHỌN ẢNH
+  // ==========================================
+
+  Future<void> _pickImage() async {
+    try {
+      final image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 75,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+
+      if (image == null) return;
+
+      // Chỉ chấp nhận định dạng được Storage Rules
+      // cho phép trước khi lưu.
+      _imageContentType(image);
+
+      final bytes = await image.readAsBytes();
+
+      if (bytes.length >= 5 * 1024 * 1024) {
+        _showMessage('Ảnh phải nhỏ hơn 5 MB.');
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _selectedImage = image;
+        _imageBytes = bytes;
+      });
+    } catch (error) {
+      _showMessage('Không chọn được ảnh: $error');
+    }
+  }
+
+  // ==========================================
+  // KIỂM TRA ĐỊNH DẠNG
+  // ==========================================
+
+  String _imageContentType(XFile image) {
+    final mime = image.mimeType?.toLowerCase();
+
+    if (mime == 'image/jpeg' || mime == 'image/png' || mime == 'image/webp') {
+      return mime!;
+    }
+
+    final name = image.name.toLowerCase();
+
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+
+    if (name.endsWith('.png')) {
+      return 'image/png';
+    }
+
+    if (name.endsWith('.webp')) {
+      return 'image/webp';
+    }
+
+    throw UnsupportedError('Chỉ hỗ trợ ảnh JPG, PNG hoặc WebP.');
+  }
+
+  // ==========================================
+  // TẢI ẢNH LÊN STORAGE
+  // ==========================================
+
+  Future<String> _uploadAvatar(String uid) async {
+    if (_selectedImage == null || _imageBytes == null) {
+      return _avatarUrl;
+    }
+
+    final contentType = _imageContentType(_selectedImage!);
+
+    String extension = 'jpg';
+
+    if (contentType == 'image/png') {
+      extension = 'png';
+    } else if (contentType == 'image/webp') {
+      extension = 'webp';
+    }
+
+    final ref = FirebaseStorage.instance.ref().child(
+      'avatars/$uid/profile.$extension',
+    );
+
+    await ref.putData(_imageBytes!, SettableMetadata(contentType: contentType));
+
+    return ref.getDownloadURL();
+  }
+
+  // ==========================================
+  // LƯU THÔNG TIN
   // ==========================================
 
   Future<void> _saveProfile() async {
-    if (_saving || _loading) return;
+    if (_loading || !_formKey.currentState!.validate()) {
+      return;
+    }
 
-    final user = _auth.currentUser;
+    final user = _user;
 
     if (user == null) {
       _showMessage('Bạn chưa đăng nhập.');
@@ -235,265 +211,277 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
-    final photo = _photoUrl.trim();
+    final email = _emailController.text.trim();
 
-    if (name.isEmpty) {
-      _showMessage('Vui lòng nhập họ và tên.');
-      return;
-    }
-
-    if (name.length > 100) {
-      _showMessage('Họ tên tối đa 100 ký tự.');
-      return;
-    }
-
-    if (phone.isNotEmpty && !RegExp(r'^\+?[0-9]{9,15}$').hasMatch(phone)) {
-      _showMessage('Số điện thoại chưa đúng định dạng.');
-      return;
-    }
-
-    if (!_isValidImageUrl(photo)) {
-      _showMessage('URL ảnh đại diện không hợp lệ.');
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-    });
+    setState(() => _loading = true);
 
     try {
-      // BƯỚC 1: Lưu thông tin hồ sơ Firestore.
-      // Không ghi đè dữ liệu ví, danh mục, giao dịch.
-      final profileRef = _db.collection('users').doc(user.uid);
+      final oldEmail = user.email ?? '';
 
-      await profileRef.set({
+      final emailChanged = oldEmail.isNotEmpty && email != oldEmail;
+
+      // ĐỔI EMAIL:
+      // Firebase gửi email xác minh trước khi đổi.
+      if (emailChanged) {
+        await user.verifyBeforeUpdateEmail(email);
+      }
+
+      // UPLOAD AVATAR
+      final avatarUrl = await _uploadAvatar(user.uid);
+
+      // CẬP NHẬT FIREBASE AUTH
+      await user.updateDisplayName(name);
+
+      if (avatarUrl.isNotEmpty) {
+        await user.updatePhotoURL(avatarUrl);
+      }
+
+      // CẬP NHẬT FIRESTORE
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'id': user.uid,
         'name': name,
-        'phone': phone,
-        'avatarUrl': photo,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'avatarUrl': avatarUrl,
       }, SetOptions(merge: true));
-
-      debugPrint('[PROFILE] Firestore updated');
-
-      // BƯỚC 2: Đồng bộ tên Firebase Authentication.
-      if (user.displayName != name) {
-        await user.updateDisplayName(name);
-      }
-
-      // BƯỚC 3: Đồng bộ URL ảnh Firebase Authentication.
-      if ((user.photoURL ?? '') != photo) {
-        await user.updatePhotoURL(photo.isEmpty ? null : photo);
-      }
-
-      await user.reload();
-
-      debugPrint('[PROFILE] Auth profile updated');
 
       if (!mounted) return;
 
-      _showMessage('Đã cập nhật hồ sơ thành công!');
+      _showMessage(
+        emailChanged
+            ? 'Đã lưu hồ sơ. '
+                  'Hãy xác minh Email mới trong hộp thư.'
+            : 'Cập nhật hồ sơ thành công!',
+      );
 
-      // Quay lại màn Hồ sơ.
-      if (context.canPop()) {
-        context.pop();
-      }
+      context.pop();
     } on FirebaseAuthException catch (error) {
-      _showMessage(
-        'Không thể đồng bộ tài khoản: '
-        '${error.message ?? error.code}',
-      );
-    } on FirebaseException catch (error) {
-      _showMessage(
-        'Lỗi Firestore: '
-        '${error.message ?? error.code}',
-      );
+      _showMessage(_authService.getErrorMessage(error));
     } catch (error) {
       _showMessage('Không thể lưu hồ sơ: $error');
     } finally {
       if (mounted) {
-        setState(() {
-          _saving = false;
-        });
+        setState(() => _loading = false);
       }
     }
   }
 
   // ==========================================
-  // 6. ẢNH ĐẠI DIỆN
+  // INPUT DECORATION THEME
   // ==========================================
 
-  Widget _avatar() {
-    return CircleAvatar(
-      key: ValueKey(_photoUrl),
-      radius: 46,
-      backgroundColor: const Color(0xFFE3F2FD),
-      child: ClipOval(
-        child: _photoUrl.isNotEmpty
-            ? Image.network(
-                _photoUrl,
-                width: 92,
-                height: 92,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Icon(
-                    Icons.person,
-                    size: 48,
-                    color: AppColors.primaryDark,
-                  );
-                },
-              )
-            : const Icon(Icons.person, size: 48, color: AppColors.primaryDark),
-      ),
-    );
-  }
-
-  // ==========================================
-  // 7. TRƯỜNG NHẬP
-  // ==========================================
-
-  InputDecoration _inputDecoration({
-    required String label,
-    required IconData icon,
-    String? helper,
+  InputDecoration _decoration(
+    BuildContext context,
+    String label,
+    IconData icon, {
+    Widget? suffixIcon,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+
     return InputDecoration(
       labelText: label,
-      helperText: helper,
-      prefixIcon: Icon(icon),
+      prefixIcon: Icon(icon, color: scheme.primary),
+      suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: scheme.surface,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
     );
   }
 
   // ==========================================
-  // 8. GIAO DIỆN CHÍNH
+  // GIAO DIỆN
   // ==========================================
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    ImageProvider<Object>? avatarImage;
+
+    if (_imageBytes != null) {
+      avatarImage = MemoryImage(_imageBytes!);
+    } else if (_avatarUrl.isNotEmpty) {
+      avatarImage = NetworkImage(_avatarUrl);
+    }
+
+    final hasEmail = _user?.email?.isNotEmpty ?? false;
+
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(title: const Text('Chỉnh sửa hồ sơ')),
-      body: _loading
-          ? Center(
-              child: _loadError == null
-                  ? const CircularProgressIndicator()
-                  : Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Không tải được hồ sơ:\n$_loadError',
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton.icon(
-                            onPressed: _loadProfile,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Thử lại'),
-                          ),
-                        ],
-                      ),
-                    ),
-            )
+      appBar: AppBar(title: const Text('Chỉnh sửa hồ sơ'), centerTitle: true),
+      body: _initializing
+          ? const Center(child: CircularProgressIndicator())
           : SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    FinanceCard(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 430),
+                    child: Form(
+                      key: _formKey,
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _avatar(),
+                          // ẢNH ĐẠI DIỆN
+                          Center(
+                            child: GestureDetector(
+                              onTap: _loading ? null : _pickImage,
+                              child: Stack(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 52,
+                                    backgroundColor:
+                                        scheme.surfaceContainerHighest,
+                                    backgroundImage: avatarImage,
+                                    child: avatarImage == null
+                                        ? Icon(
+                                            Icons.person,
+                                            size: 60,
+                                            color: scheme.primary,
+                                          )
+                                        : null,
+                                  ),
+
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: CircleAvatar(
+                                      radius: 17,
+                                      backgroundColor: scheme.primary,
+                                      child: Icon(
+                                        Icons.camera_alt,
+                                        size: 18,
+                                        color: scheme.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          Text(
+                            'Nhấn vào ảnh để thay đổi',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+
+                          const SizedBox(height: 30),
+
+                          // HỌ VÀ TÊN
+                          TextFormField(
+                            controller: _nameController,
+                            enabled: !_loading,
+                            decoration: _decoration(
+                              context,
+                              'Họ và tên',
+                              Icons.person_outline,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Vui lòng nhập họ tên.';
+                              }
+                              return null;
+                            },
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // EMAIL
+                          TextFormField(
+                            controller: _emailController,
+                            enabled: !_loading && hasEmail,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _decoration(
+                              context,
+                              'Email',
+                              Icons.email_outlined,
+                            ),
+                            validator: (value) {
+                              if (!hasEmail) return null;
+
+                              if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                  .hasMatch(value?.trim() ?? '')) {
+                                return 'Email không hợp lệ.';
+                              }
+
+                              return null;
+                            },
+                          ),
+
+                          if (!hasEmail) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Tài khoản Phone chưa có Email. '
+                              'Cần liên kết Email/Password riêng.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+
+                          const SizedBox(height: 16),
+
+                          // SỐ ĐIỆN THOẠI
+                          TextFormField(
+                            controller: _phoneController,
+                            readOnly: true,
+                            decoration: _decoration(
+                              context,
+                              'Số điện thoại',
+                              Icons.phone_outlined,
+                              suffixIcon: IconButton(
+                                tooltip: 'Xác minh số điện thoại',
+                                onPressed: _loading
+                                    ? null
+                                    : () {
+                                        context.push(
+                                          '${AppRouter.phoneLogin}?mode=link',
+                                        );
+                                      },
+                                icon: const Icon(Icons.verified_user_outlined),
+                              ),
+                            ),
+                          ),
 
                           const SizedBox(height: 10),
 
-                          TextButton.icon(
-                            onPressed: _saving ? null : _changeAvatar,
-                            icon: const Icon(Icons.camera_alt_outlined),
-                            label: const Text('Đổi ảnh đại diện'),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          TextField(
-                            controller: _nameController,
-                            enabled: !_saving,
-                            textCapitalization: TextCapitalization.words,
-                            decoration: _inputDecoration(
-                              label: 'Họ và tên',
-                              icon: Icons.person_outline,
+                          Text(
+                            'Thay đổi số điện thoại cần '
+                            'xác minh bằng OTP.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
                             ),
                           ),
 
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 30),
 
-                          TextField(
-                            controller: _phoneController,
-                            enabled: !_saving,
-                            keyboardType: TextInputType.phone,
-                            decoration: _inputDecoration(
-                              label: 'Số điện thoại liên hệ',
-                              icon: Icons.phone_outlined,
-                              helper: 'Không thay đổi số OTP đã xác minh.',
-                            ),
-                          ),
-
-                          const SizedBox(height: 16),
-
-                          TextField(
-                            controller: _emailController,
-                            readOnly: true,
-                            decoration: _inputDecoration(
-                              label: 'Email đăng nhập',
-                              icon: Icons.email_outlined,
-                              helper:
-                                  'Email đăng nhập được quản lý '
-                                  'trong Firebase Authentication.',
+                          // NÚT LƯU
+                          SizedBox(
+                            height: 52,
+                            child: FilledButton(
+                              onPressed: _loading ? null : _saveProfile,
+                              child: _loading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Lưu thay đổi'),
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: FilledButton.icon(
-                        onPressed: _saving ? null : _saveProfile,
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_outlined),
-                        label: Text(_saving ? 'Đang lưu...' : 'Lưu thay đổi'),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    const Text(
-                      'Thông tin hồ sơ được lưu trên '
-                      'Firebase và có thể dùng lại '
-                      'sau khi đăng nhập.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
