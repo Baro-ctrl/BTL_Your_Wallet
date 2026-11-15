@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../models/user_model.dart';
 import '../repositories/user_repository.dart';
@@ -17,11 +18,13 @@ class AuthService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   final UserRepository _userRepository = UserRepository();
-
   final DefaultDataService _defaultDataService = DefaultDataService();
 
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  Future<void>? _googleInitialization;
+
   // ==========================================
-  // 1. THÔNG TIN TÀI KHOẢN
+  // THÔNG TIN TÀI KHOẢN
   // ==========================================
 
   User? get currentUser => _auth.currentUser;
@@ -35,7 +38,7 @@ class AuthService {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // ==========================================
-  // 2. ĐĂNG NHẬP EMAIL / MẬT KHẨU
+  // ĐĂNG NHẬP EMAIL
   // ==========================================
 
   Future<UserCredential> login({
@@ -48,41 +51,26 @@ class AuthService {
       throw ArgumentError('Vui lòng nhập đầy đủ Email và mật khẩu.');
     }
 
-    try {
-      debugPrint('[AUTH] Bắt đầu đăng nhập Email');
+    final result = await _auth.signInWithEmailAndPassword(
+      email: cleanEmail,
+      password: password,
+    );
 
-      // Xác thực tài khoản trên Firebase
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: cleanEmail,
-        password: password,
-      );
+    final user = result.user;
 
-      final user = credential.user;
-
-      if (user == null) {
-        throw StateError('Firebase không trả về tài khoản.');
-      }
-
-      debugPrint('[AUTH] Đăng nhập thành công: ${user.uid}');
-
-      // Tạo dữ liệu mặc định nếu chưa có
-      await _prepareUserSafely(user);
-
-      return credential;
-    } on FirebaseAuthException catch (error) {
-      debugPrint('[AUTH] Firebase error: ${error.code}');
-      debugPrint('[AUTH] ${error.message}');
-
-      rethrow;
-    } catch (error) {
-      debugPrint('[AUTH] Login error: $error');
-
-      rethrow;
+    if (user == null) {
+      throw StateError('Firebase không trả về tài khoản.');
     }
+
+    await _prepareUserSafely(user);
+
+    debugPrint('[AUTH] Email Login: ${user.uid}');
+
+    return result;
   }
 
   // ==========================================
-  // 3. ĐĂNG KÝ EMAIL / MẬT KHẨU
+  // ĐĂNG KÝ EMAIL
   // ==========================================
 
   Future<void> register({
@@ -105,14 +93,12 @@ class AuthService {
       throw ArgumentError('Mật khẩu phải có ít nhất 6 ký tự.');
     }
 
-    debugPrint('[AUTH] Bắt đầu đăng ký');
-
-    final credential = await _auth.createUserWithEmailAndPassword(
+    final result = await _auth.createUserWithEmailAndPassword(
       email: cleanEmail,
       password: password,
     );
 
-    final user = credential.user;
+    final user = result.user;
 
     if (user == null) {
       throw StateError('Không tạo được tài khoản Firebase.');
@@ -120,13 +106,100 @@ class AuthService {
 
     await user.updateDisplayName(cleanName);
 
-    debugPrint('[AUTH] Đăng ký thành công: ${user.uid}');
-
     await _prepareUserSafely(user);
+
+    debugPrint('[AUTH] Đăng ký thành công: ${user.uid}');
   }
 
   // ==========================================
-  // 4. KHỞI TẠO HỒ SƠ VÀ DỮ LIỆU MẶC ĐỊNH
+  // GOOGLE SIGN-IN
+  // google_sign_in 7.x
+  // ==========================================
+
+  Future<void> _initializeGoogle() {
+    return _googleInitialization ??= _googleSignIn.initialize();
+  }
+
+  Future<UserCredential> loginWithGoogle() async {
+    if (kIsWeb) {
+      final provider = GoogleAuthProvider();
+
+      final result = await _auth.signInWithPopup(provider);
+
+      final user = result.user;
+
+      if (user == null) {
+        throw StateError('Google không trả về tài khoản.');
+      }
+
+      await _prepareUserSafely(user);
+      return result;
+    }
+
+    await _initializeGoogle();
+
+    final googleUser = await _googleSignIn.authenticate();
+
+    final googleAuth = googleUser.authentication;
+
+    final idToken = googleAuth.idToken;
+
+    if (idToken == null) {
+      throw StateError(
+        'Không nhận được Google ID Token. '
+        'Kiểm tra Firebase và cấu hình Google Sign-In.',
+      );
+    }
+
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+
+    final result = await _auth.signInWithCredential(credential);
+
+    final user = result.user;
+
+    if (user == null) {
+      throw StateError('Google không trả về tài khoản.');
+    }
+
+    await _prepareUserSafely(user);
+
+    debugPrint('[AUTH] Google Login: ${user.uid}');
+
+    return result;
+  }
+
+  // ==========================================
+  // APPLE SIGN-IN
+  // ==========================================
+
+  Future<UserCredential> loginWithApple() async {
+    final provider = AppleAuthProvider()
+      ..addScope('email')
+      ..addScope('name');
+
+    final UserCredential result;
+
+    if (kIsWeb) {
+      result = await _auth.signInWithPopup(provider);
+    } else {
+      result = await _auth.signInWithProvider(provider);
+    }
+
+    final user = result.user;
+
+    if (user == null) {
+      throw StateError('Apple không trả về tài khoản.');
+    }
+
+    await _prepareUserSafely(user);
+
+    debugPrint('[AUTH] Apple Login: ${user.uid}');
+
+    return result;
+  }
+
+  // ==========================================
+  // TẠO HỒ SƠ VÀ DỮ LIỆU MẶC ĐỊNH
   // ==========================================
 
   Future<void> prepareUserData(User user) async {
@@ -134,7 +207,6 @@ class AuthService {
 
     final snapshot = await userRef.get();
 
-    // Chỉ tạo hồ sơ nếu chưa tồn tại
     if (!snapshot.exists) {
       final userModel = UserModel(
         id: user.uid,
@@ -149,77 +221,56 @@ class AuthService {
 
       await _userRepository.addUser(userModel);
 
-      debugPrint('[FIRESTORE] Đã tạo hồ sơ người dùng.');
-    } else {
-      debugPrint('[FIRESTORE] Hồ sơ đã tồn tại.');
+      debugPrint('[FIRESTORE] Đã tạo hồ sơ.');
     }
 
-    // Tạo ví và danh mục mặc định
     await _defaultDataService.createDefaultData(user.uid);
 
-    debugPrint('[FIRESTORE] Kiểm tra/khởi tạo dữ liệu hoàn tất.');
+    debugPrint('[FIRESTORE] Khởi tạo dữ liệu hoàn tất.');
   }
 
-  // Xử lý lỗi Firestore riêng
-  // Không làm mất phiên đăng nhập Firebase.
   Future<void> _prepareUserSafely(User user) async {
     try {
       await prepareUserData(user);
-
-      debugPrint('[FIRESTORE] INITIALIZATION SUCCESS');
     } on FirebaseException catch (error, stackTrace) {
-      debugPrint('[FIRESTORE] ERROR CODE: ${error.code}');
-      debugPrint('[FIRESTORE] MESSAGE: ${error.message}');
-
+      debugPrint('[FIRESTORE] ${error.code}: ${error.message}');
       debugPrintStack(stackTrace: stackTrace);
     } catch (error, stackTrace) {
-      debugPrint('[FIRESTORE] INITIALIZATION FAILED: $error');
-
+      debugPrint('[FIRESTORE] $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  // ==========================================
-  // 5. ĐĂNG NHẬP BẰNG APPLE ID
-  // ==========================================
+  Future<void> retryDefaultData() async {
+    final user = _auth.currentUser;
 
-  Future<UserCredential> loginWithApple() async {
-    try {
-      debugPrint('[AUTH] Bắt đầu Apple Login');
-
-      final provider = AppleAuthProvider()
-        ..addScope('email')
-        ..addScope('name');
-
-      final UserCredential credential;
-
-      if (kIsWeb) {
-        credential = await _auth.signInWithPopup(provider);
-      } else {
-        credential = await _auth.signInWithProvider(provider);
-      }
-
-      final user = credential.user;
-
-      if (user == null) {
-        throw StateError('Apple không trả về tài khoản.');
-      }
-
-      debugPrint('[AUTH] Apple Login thành công: ${user.uid}');
-
-      await _prepareUserSafely(user);
-
-      return credential;
-    } on FirebaseAuthException catch (error) {
-      debugPrint('[AUTH] Apple error: ${error.code}');
-
-      rethrow;
+    if (user == null) {
+      throw StateError('Bạn chưa đăng nhập.');
     }
+
+    await prepareUserData(user);
   }
 
   // ==========================================
-  // 6. GỬI OTP ĐẾN SỐ ĐIỆN THOẠI
+  // PHONE AUTHENTICATION
   // ==========================================
+
+  Future<UserCredential> _authenticatePhoneCredential(
+    PhoneAuthCredential credential, {
+    required bool linkToCurrentUser,
+  }) async {
+    if (linkToCurrentUser) {
+      final user = _auth.currentUser;
+
+      if (user == null) {
+        throw StateError('Cần đăng nhập trước khi liên kết số điện thoại.');
+      }
+
+      return user.linkWithCredential(credential);
+    }
+
+    return _auth.signInWithCredential(credential);
+  }
 
   Future<void> sendPhoneOtp({
     required String phoneNumber,
@@ -227,6 +278,7 @@ class AuthService {
     required void Function(FirebaseAuthException) onError,
     required void Function(UserCredential) onVerified,
     int? resendToken,
+    bool linkToCurrentUser = false,
   }) async {
     final phone = phoneNumber.trim();
 
@@ -235,20 +287,20 @@ class AuthService {
     }
 
     if (kIsWeb) {
-      throw UnsupportedError('Luồng OTP này chỉ hỗ trợ Android/iOS.');
+      throw UnsupportedError('Luồng OTP hiện tại chỉ hỗ trợ Android/iOS.');
     }
-
-    debugPrint('[AUTH] Bắt đầu xác minh số điện thoại.');
 
     await _auth.verifyPhoneNumber(
       phoneNumber: phone,
       timeout: const Duration(seconds: 60),
       forceResendingToken: resendToken,
 
-      // Android có thể tự động xác minh OTP
       verificationCompleted: (credential) async {
         try {
-          final result = await _auth.signInWithCredential(credential);
+          final result = await _authenticatePhoneCredential(
+            credential,
+            linkToCurrentUser: linkToCurrentUser,
+          );
 
           final user = result.user;
 
@@ -257,43 +309,39 @@ class AuthService {
           }
 
           onVerified(result);
-        } on FirebaseAuthException catch (error) {
-          onError(error);
-        } catch (error) {
+        } on FirebaseAuthException catch (e) {
+          onError(e);
+        } catch (e) {
           onError(
             FirebaseAuthException(
               code: 'phone-login-failed',
-              message: error.toString(),
+              message: e.toString(),
             ),
           );
         }
       },
 
       verificationFailed: (error) {
-        debugPrint('[AUTH] Phone error: ${error.code}');
-
+        debugPrint('[AUTH] Phone OTP error: ${error.code}');
         onError(error);
       },
 
       codeSent: (verificationId, token) {
-        debugPrint('[AUTH] OTP đã được Firebase xử lý gửi.');
+        debugPrint('[AUTH] OTP đã được xử lý gửi.');
 
         onCodeSent(verificationId, token);
       },
 
       codeAutoRetrievalTimeout: (verificationId) {
-        debugPrint('[AUTH] Hết thời gian tự nhận OTP.');
+        debugPrint('[AUTH] Hết thời gian tự động nhận OTP.');
       },
     );
   }
 
-  // ==========================================
-  // 7. XÁC NHẬN OTP
-  // ==========================================
-
   Future<UserCredential> verifyPhoneOtp({
     required String verificationId,
     required String smsCode,
+    bool linkToCurrentUser = false,
   }) async {
     if (verificationId.isEmpty) {
       throw ArgumentError('Chưa yêu cầu gửi mã OTP.');
@@ -308,13 +356,14 @@ class AuthService {
       smsCode: smsCode.trim(),
     );
 
-    final result = await _auth.signInWithCredential(credential);
+    final result = await _authenticatePhoneCredential(
+      credential,
+      linkToCurrentUser: linkToCurrentUser,
+    );
 
     final user = result.user;
 
     if (user != null) {
-      debugPrint('[AUTH] Phone Login thành công: ${user.uid}');
-
       await _prepareUserSafely(user);
     }
 
@@ -322,23 +371,7 @@ class AuthService {
   }
 
   // ==========================================
-  // 8. KHÔI PHỤC DỮ LIỆU MẶC ĐỊNH
-  // ==========================================
-
-  Future<void> retryDefaultData() async {
-    final user = _auth.currentUser;
-
-    if (user == null) {
-      throw StateError('Bạn chưa đăng nhập.');
-    }
-
-    // Hàm này báo lỗi thật nếu Firestore thất bại,
-    // giúp kiểm tra hoặc hiển thị nút thử lại.
-    await prepareUserData(user);
-  }
-
-  // ==========================================
-  // 9. QUÊN MẬT KHẨU
+  // QUÊN MẬT KHẨU
   // ==========================================
 
   Future<void> resetPassword(String email) async {
@@ -352,7 +385,41 @@ class AuthService {
   }
 
   // ==========================================
-  // 10. XÁC MINH EMAIL
+  // KIỂM TRA MÃ KHÔI PHỤC
+  // ==========================================
+
+  Future<String> verifyResetCode(String code) async {
+    if (code.trim().isEmpty) {
+      throw ArgumentError('Thiếu mã khôi phục mật khẩu.');
+    }
+
+    return _auth.verifyPasswordResetCode(code.trim());
+  }
+
+  // ==========================================
+  // XÁC NHẬN MẬT KHẨU MỚI
+  // ==========================================
+
+  Future<void> confirmResetPassword({
+    required String oobCode,
+    required String newPassword,
+  }) async {
+    if (oobCode.trim().isEmpty) {
+      throw ArgumentError('Thiếu mã khôi phục mật khẩu.');
+    }
+
+    if (newPassword.length < 6) {
+      throw ArgumentError('Mật khẩu phải có ít nhất 6 ký tự.');
+    }
+
+    await _auth.confirmPasswordReset(
+      code: oobCode.trim(),
+      newPassword: newPassword,
+    );
+  }
+
+  // ==========================================
+  // XÁC MINH EMAIL
   // ==========================================
 
   Future<void> sendEmailVerification() async {
@@ -380,17 +447,26 @@ class AuthService {
   }
 
   // ==========================================
-  // 11. ĐĂNG XUẤT
+  // ĐĂNG XUẤT
   // ==========================================
 
   Future<void> logout() async {
     await _auth.signOut();
 
-    debugPrint('[AUTH] Đã đăng xuất thành công.');
+    if (!kIsWeb && _googleInitialization != null) {
+      try {
+        await _googleInitialization;
+        await _googleSignIn.signOut();
+      } catch (error) {
+        debugPrint('[AUTH] Google signOut: $error');
+      }
+    }
+
+    debugPrint('[AUTH] Đăng xuất thành công.');
   }
 
   // ==========================================
-  // 12. THÔNG BÁO LỖI TIẾNG VIỆT
+  // THÔNG BÁO LỖI TIẾNG VIỆT
   // ==========================================
 
   String getErrorMessage(FirebaseAuthException error) {
@@ -414,7 +490,7 @@ class AuthService {
         return 'Tài khoản đã bị vô hiệu hóa.';
 
       case 'too-many-requests':
-        return 'Bạn thử quá nhiều lần. '
+        return 'Bạn đã thử quá nhiều lần. '
             'Vui lòng thử lại sau.';
 
       case 'network-request-failed':
@@ -437,19 +513,30 @@ class AuthService {
         return 'Đã vượt giới hạn gửi mã OTP.';
 
       case 'account-exists-with-different-credential':
-        return 'Tài khoản này đang sử dụng '
-            'phương thức đăng nhập khác.';
+        return 'Tài khoản sử dụng phương thức '
+            'đăng nhập khác.';
 
       case 'credential-already-in-use':
         return 'Thông tin đăng nhập đã được '
             'liên kết với tài khoản khác.';
+
+      case 'invalid-action-code':
+        return 'Liên kết khôi phục không hợp lệ '
+            'hoặc đã được sử dụng.';
+
+      case 'expired-action-code':
+        return 'Liên kết khôi phục đã hết hạn.';
+
+      case 'requires-recent-login':
+        return 'Vui lòng đăng nhập lại để '
+            'thực hiện thao tác này.';
 
       case 'invalid-apple-credential':
         return 'Không thể xác minh Apple ID.';
 
       case 'cancelled-popup-request':
       case 'popup-closed-by-user':
-        return 'Bạn đã hủy quá trình đăng nhập.';
+        return 'Bạn đã hủy đăng nhập.';
 
       default:
         return error.message ?? 'Lỗi Firebase: ${error.code}';

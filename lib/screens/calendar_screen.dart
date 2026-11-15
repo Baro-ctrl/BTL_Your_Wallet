@@ -5,7 +5,12 @@ import 'package:go_router/go_router.dart';
 
 import '../app/app_router.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_bottom_nav.dart';
 import '../widgets/finance_ui.dart';
+
+// ==========================================
+// CALENDAR SCREEN
+// ==========================================
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -22,18 +27,68 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ==========================================
-  // 1. HÀM HỖ TRỢ
+  // 1. QUAY VỀ TRANG CHỦ
+  // ==========================================
+
+  void _goHome() {
+    context.go(AppRouter.home);
+  }
+
+  // ==========================================
+  // 2. APP BAR - NÚT QUAY LẠI PHÍA TRÊN
+  // ==========================================
+
+  PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      centerTitle: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      foregroundColor: scheme.onSurface,
+
+      // NÚT QUAY LẠI GÓC TRÊN BÊN TRÁI
+      leading: IconButton(
+        tooltip: 'Về Trang chủ',
+        icon: const Icon(Icons.arrow_back_rounded, size: 25),
+        onPressed: _goHome,
+      ),
+
+      // TIÊU ĐỀ Ở GIỮA
+      title: const Text(
+        'Lịch chi tiêu',
+        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // ==========================================
+  // 3. CHUYỂN SỐ TIỀN
   // ==========================================
 
   int _amount(dynamic value) {
-    if (value is num) return value.toInt();
+    if (value is num) {
+      return value.toInt();
+    }
 
     return int.tryParse(value?.toString().replaceAll('.', '') ?? '') ?? 0;
   }
 
+  // ==========================================
+  // 4. CHUYỂN NGÀY THÁNG
+  // ==========================================
+
   DateTime? _date(dynamic value) {
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+
+    if (value is DateTime) {
+      return value;
+    }
 
     if (value is String) {
       return DateTime.tryParse(value);
@@ -41,6 +96,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     return null;
   }
+
+  // ==========================================
+  // 5. SO SÁNH NGÀY
+  // ==========================================
 
   bool _sameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
@@ -50,15 +109,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return _sameDay(date, DateTime.now());
   }
 
+  // ==========================================
+  // 6. HIỂN THỊ GIỜ
+  // ==========================================
+
   String _timeText(DateTime date) {
     return '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
   }
 
+  // ==========================================
+  // 7. LẤY TÊN DANH MỤC
+  // ==========================================
+
   String _categoryName(Map<String, dynamic> data) {
     final saved = data['categoryName']?.toString().trim() ?? '';
 
-    if (saved.isNotEmpty) return saved;
+    if (saved.isNotEmpty) {
+      return saved;
+    }
 
     const defaultNames = <String, String>{
       'food': 'Ăn',
@@ -71,11 +140,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       'other_income': 'Thu nhập khác',
     };
 
-    return defaultNames[data['categoryId']] ?? 'Giao dịch';
+    return defaultNames[data['categoryId']?.toString()] ?? 'Giao dịch';
   }
 
   // ==========================================
-  // 2. CHUYỂN THÁNG
+  // 8. CHUYỂN THÁNG
   // ==========================================
 
   void _changeMonth(int offset) {
@@ -87,7 +156,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ==========================================
-  // 3. LỌC GIAO DỊCH THEO NGÀY
+  // 9. LỌC GIAO DỊCH THEO NGÀY
   // ==========================================
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _transactionsOn(
@@ -100,6 +169,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return transactionDate != null && _sameDay(transactionDate, date);
     }).toList();
 
+    // Sắp xếp giao dịch mới nhất trước
     result.sort((a, b) {
       final dateA = _date(a.data()['date'])!;
       final dateB = _date(b.data()['date'])!;
@@ -111,10 +181,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ==========================================
-  // 4. THẺ LỊCH THÁNG
+  // 10. THẺ LỊCH THÁNG
   // ==========================================
 
   Widget _calendarCard(Map<int, int> transactionCounts) {
+    final scheme = Theme.of(context).colorScheme;
+
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
 
     final daysInMonth = DateTime(
@@ -123,7 +195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       0,
     ).day;
 
-    // Thứ Hai = 0, Chủ nhật = 6.
+    // Thứ 2 = 0, Chủ nhật = 6
     final startOffset = firstDay.weekday - 1;
 
     final cellCount = ((startOffset + daysInMonth + 6) ~/ 7) * 7;
@@ -131,24 +203,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return FinanceCard(
       child: Column(
         children: [
+          // ==================================
           // CHỌN THÁNG
+          // ==================================
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
+                tooltip: 'Tháng trước',
                 onPressed: () => _changeMonth(-1),
                 icon: const Icon(Icons.chevron_left, size: 28),
               ),
+
               Text(
                 'Tháng ${visibleMonth.month}/'
                 '${visibleMonth.year}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: scheme.onSurface,
                 ),
               ),
+
               IconButton(
+                tooltip: 'Tháng sau',
                 onPressed: () => _changeMonth(1),
                 icon: const Icon(Icons.chevron_right, size: 28),
               ),
@@ -157,19 +236,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
           const SizedBox(height: 16),
 
+          // ==================================
           // THỨ TRONG TUẦN
+          // ==================================
           Row(
-            children: const ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((
-              day,
-            ) {
+            children: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) {
               return Expanded(
                 child: Center(
                   child: Text(
                     day,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
-                      color: AppColors.textSecondary,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -179,17 +258,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
           const SizedBox(height: 12),
 
-          // LƯỚI NGÀY
+          // ==================================
+          // LƯỚI NGÀY TRONG THÁNG
+          // ==================================
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: cellCount,
+
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
               mainAxisSpacing: 6,
               crossAxisSpacing: 4,
               childAspectRatio: 0.9,
             ),
+
             itemBuilder: (context, index) {
               final day = index - startOffset + 1;
 
@@ -200,6 +283,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               final date = DateTime(visibleMonth.year, visibleMonth.month, day);
 
               final selected = _sameDay(date, selectedDate);
+
               final today = _isToday(date);
 
               final hasTransactions = (transactionCounts[day] ?? 0) > 0;
@@ -210,15 +294,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     selectedDate = date;
                   });
                 },
+
                 borderRadius: BorderRadius.circular(12),
+
                 child: Container(
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.transparent,
+                    color: selected ? scheme.primary : Colors.transparent,
+
                     borderRadius: BorderRadius.circular(12),
+
                     border: today && !selected
-                        ? Border.all(color: AppColors.primary, width: 1.5)
+                        ? Border.all(color: scheme.primary, width: 1.5)
                         : null,
                   ),
+
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -228,20 +317,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           fontWeight: selected
                               ? FontWeight.bold
                               : FontWeight.normal,
-                          color: selected
-                              ? Colors.white
-                              : AppColors.textPrimary,
+
+                          color: selected ? scheme.onPrimary : scheme.onSurface,
                         ),
                       ),
 
                       const SizedBox(height: 4),
 
+                      // ĐÁNH DẤU NGÀY CÓ GIAO DỊCH
                       if (hasTransactions)
                         Container(
                           width: 6,
                           height: 6,
                           decoration: BoxDecoration(
-                            color: selected ? Colors.white : AppColors.primary,
+                            color: selected ? scheme.onPrimary : scheme.primary,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -257,7 +346,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ==========================================
-  // 5. THẺ TỔNG THU / CHI TRONG NGÀY
+  // 11. THẺ TỔNG THU / CHI TRONG NGÀY
   // ==========================================
 
   Widget _summaryCard({
@@ -265,6 +354,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required int amount,
     required bool isIncome,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+
     final color = isIncome ? AppColors.income : AppColors.expense;
 
     return FinanceCard(
@@ -279,10 +370,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
           ),
 
           const SizedBox(height: 8),
@@ -307,42 +395,54 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ==========================================
-  // 6. THẺ GIAO DỊCH
+  // 12. THẺ CHI TIẾT GIAO DỊCH
   // ==========================================
 
   Widget _transactionTile(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final scheme = Theme.of(context).colorScheme;
+
     final data = doc.data();
 
     final isIncome = data['type'] == 'income';
+
     final amount = _amount(data['amount']);
     final date = _date(data['date']);
 
     final category = _categoryName(data);
     final note = data['note']?.toString().trim() ?? '';
 
+    final amountColor = isIncome ? AppColors.income : AppColors.expense;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
+
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
+
         onTap: () {
           context.push(AppRouter.transactionDetailPath(doc.id));
         },
+
         child: FinanceCard(
           child: Row(
             children: [
+              // BIỂU TƯỢNG THU / CHI
               CircleAvatar(
                 radius: 24,
+
                 backgroundColor: isIncome
                     ? const Color(0xFFDCFCE7)
                     : const Color(0xFFFFEDD5),
+
                 child: Icon(
                   isIncome ? Icons.arrow_downward : Icons.arrow_upward,
-                  color: isIncome ? AppColors.income : AppColors.expense,
+                  color: amountColor,
                 ),
               ),
 
               const SizedBox(width: 12),
 
+              // DANH MỤC, GHI CHÚ, THỜI GIAN
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,13 +459,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                     if (note.isNotEmpty) ...[
                       const SizedBox(height: 4),
+
                       Text(
                         note,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -374,8 +475,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                     Text(
                       date == null ? 'Chưa có giờ' : _timeText(date),
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -385,6 +486,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
               const SizedBox(width: 6),
 
+              // SỐ TIỀN
               Flexible(
                 child: Text(
                   '${isIncome ? '+' : '-'}'
@@ -394,14 +496,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isIncome ? AppColors.income : AppColors.expense,
+                    color: amountColor,
                   ),
                 ),
               ),
 
               const SizedBox(width: 4),
 
-              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -410,17 +512,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ==========================================
-  // 7. GIAO DIỆN LỊCH
+  // 13. HIỂN THỊ NỘI DUNG LỊCH
   // ==========================================
 
   Widget _buildCalendar(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+
+    // LẤY GIAO DỊCH CỦA NGÀY ĐƯỢC CHỌN
     final selectedTransactions = _transactionsOn(selectedDate, transactions);
 
     final transactionCounts = <int, int>{};
 
-    // Đánh dấu ngày có giao dịch trong tháng đang xem.
+    // ĐÁNH DẤU CÁC NGÀY CÓ GIAO DỊCH
     for (final doc in transactions) {
       final date = _date(doc.data()['date']);
 
@@ -436,8 +541,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     int totalIncome = 0;
     int totalExpense = 0;
 
+    // TÍNH THU / CHI TRONG NGÀY
     for (final doc in selectedTransactions) {
       final data = doc.data();
+
       final amount = _amount(data['amount']);
 
       if (data['type'] == 'income') {
@@ -450,10 +557,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // LỊCH THÁNG
         _calendarCard(transactionCounts),
 
         const SizedBox(height: 24),
 
+        // NGÀY ĐANG CHỌN
         FinanceTitle(
           'Ngày ${selectedDate.day}/'
           '${selectedDate.month}/'
@@ -462,6 +571,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         const SizedBox(height: 14),
 
+        // THU NHẬP - CHI TIÊU
         Row(
           children: [
             Expanded(
@@ -471,7 +581,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 isIncome: true,
               ),
             ),
+
             const SizedBox(width: 12),
+
             Expanded(
               child: _summaryCard(
                 title: 'Chi tiêu',
@@ -488,44 +600,52 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         const SizedBox(height: 12),
 
+        // CHƯA CÓ GIAO DỊCH
         if (selectedTransactions.isEmpty)
-          const FinanceCard(
+          FinanceCard(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+              padding: const EdgeInsets.symmetric(vertical: 24),
+
               child: Column(
                 children: [
                   Icon(
                     Icons.receipt_long_outlined,
                     size: 42,
-                    color: AppColors.textSecondary,
+                    color: scheme.onSurfaceVariant,
                   ),
-                  SizedBox(height: 12),
+
+                  const SizedBox(height: 12),
+
                   Text(
                     'Chưa có giao dịch trong ngày',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
           ),
 
+        // DANH SÁCH GIAO DỊCH
         ...selectedTransactions.map(_transactionTile),
       ],
     );
   }
 
   // ==========================================
-  // 8. KẾT NỐI FIRESTORE
+  // 14. KẾT NỐI FIRESTORE VÀ BUILD
   // ==========================================
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
+    final theme = Theme.of(context);
+
+    // CHƯA ĐĂNG NHẬP
     if (user == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Lịch chi tiêu')),
+        appBar: _buildAppBar(),
         body: const Center(child: Text('Vui lòng đăng nhập.')),
       );
     }
@@ -536,14 +656,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
         .collection('transactions');
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      // NỀN THEO LIGHT / DARK MODE
+      backgroundColor: theme.scaffoldBackgroundColor,
 
-      appBar: AppBar(title: const Text('Lịch chi tiêu'), centerTitle: true),
+      // NÚT ← Ở GÓC TRÊN BÊN TRÁI
+      appBar: _buildAppBar(),
 
+      // ======================================
+      // NỘI DUNG LỊCH FIRESTORE
+      // ======================================
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: transactionsRef.snapshots(),
+
           builder: (context, snapshot) {
+            // LỖI TẢI DỮ LIỆU
             if (snapshot.hasError) {
               return Center(
                 child: Padding(
@@ -558,14 +685,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
               );
             }
 
+            // ĐANG TẢI DỮ LIỆU
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
+            // HIỂN THỊ LỊCH
             return _buildCalendar(snapshot.data!.docs);
           },
         ),
       ),
+
+      // ======================================
+      // THANH ĐIỀU HƯỚNG 5 NÚT
+      // ======================================
+      bottomNavigationBar: const AppBottomNav(),
     );
   }
 }
