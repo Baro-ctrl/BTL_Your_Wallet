@@ -7,6 +7,7 @@ import '../app/app_router.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_bottom_nav.dart';
+import '../services/local_notification_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -31,6 +32,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.danger),
     );
+  }
+
+  Future<void> _setDailyReminder(User user, bool enabled) async {
+    final userRef = _db.collection('users').doc(user.uid);
+
+    try {
+      if (enabled) {
+        final permissionGranted =
+            await LocalNotificationService.requestPermission();
+
+        if (!permissionGranted) {
+          _showError('Bạn chưa cấp quyền gửi thông báo.');
+          return;
+        }
+
+        await LocalNotificationService.scheduleDailyReminder(
+          hour: 20,
+          minute: 0,
+        );
+      } else {
+        await LocalNotificationService.cancelDailyReminder();
+      }
+
+      await userRef.set({
+        'id': user.uid,
+        'dailyReminderEnabled': enabled,
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              enabled
+                  ? 'Đã bật nhắc ghi giao dịch lúc 20:00 mỗi ngày.'
+                  : 'Đã tắt nhắc ghi giao dịch hằng ngày.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      _showError('Không thể cập nhật nhắc nhở: $error');
+    }
   }
 
   // ==========================================
@@ -240,11 +283,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String name,
     required String email,
     required String photoUrl,
+    required User user,
+    required bool dailyReminderEnabled,
   }) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         _profileCard(name: name, email: email, photoUrl: photoUrl),
+        const SizedBox(height: 12),
+
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: SwitchListTile.adaptive(
+            secondary: const Icon(
+              Icons.alarm_outlined,
+              color: AppColors.primary,
+            ),
+            title: const Text(
+              'Nhắc ghi giao dịch hằng ngày',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text('Mỗi ngày lúc 20:00'),
+            value: dailyReminderEnabled,
+            onChanged: _isLoggingOut
+                ? null
+                : (enabled) => _setDailyReminder(user, enabled),
+          ),
+        ),
+
+        const SizedBox(height: 12),
 
         const SizedBox(height: 24),
 
@@ -352,6 +423,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           Expanded(
                             child: _profileContent(
+                              user: user,
+                              dailyReminderEnabled: false,
                               name: authName.isNotEmpty
                                   ? authName
                                   : 'Người dùng Your Wallet',
@@ -383,6 +456,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       : authPhoto;
 
                   return _profileContent(
+                    user: user,
+                    dailyReminderEnabled: data['dailyReminderEnabled'] == true,
                     name: name,
                     email: authEmail,
                     photoUrl: photoUrl,

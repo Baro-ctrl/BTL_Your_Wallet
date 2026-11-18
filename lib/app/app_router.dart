@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,7 +13,7 @@ import '../screens/home_screen.dart';
 import '../screens/add_expense_screen.dart';
 import '../screens/notification_screen.dart';
 import '../screens/profile_screen.dart';
-
+import '../screens/month_summary_screen.dart';
 import '../screens/wallets_screen.dart';
 import '../screens/categories_screen.dart';
 import '../screens/set_budget_screen.dart';
@@ -32,12 +31,8 @@ class AuthRouterNotifier extends ChangeNotifier {
   late final StreamSubscription<User?> _subscription;
 
   AuthRouterNotifier() {
-    _subscription = FirebaseAuth.instance
-        .authStateChanges()
-        .listen((user) {
-      debugPrint(
-        '[ROUTER] Auth changed: ${user?.uid}',
-      );
+    _subscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      debugPrint('[ROUTER] Auth changed: ${user?.uid}');
       notifyListeners();
     });
   }
@@ -73,16 +68,14 @@ class AppRouter {
   static const String statistic = '/statistic';
   static const String transactions = '/transactions';
   static const String editProfile = '/edit-profile';
-
-  static const String transactionDetail =
-      '/transaction-detail/:id';
+  static const String monthSummary = '/month-summary';
+  static const String transactionDetail = '/transaction-detail/:id';
 
   static String transactionDetailPath(String id) {
     return '/transaction-detail/${Uri.encodeComponent(id)}';
   }
 
-  static final AuthRouterNotifier _authNotifier =
-  AuthRouterNotifier();
+  static final AuthRouterNotifier _authNotifier = AuthRouterNotifier();
 
   static final GoRouter router = GoRouter(
     initialLocation: welcome,
@@ -93,18 +86,11 @@ class AppRouter {
       final loggedIn = user != null;
       final path = state.matchedLocation;
 
-      const publicRoutes = <String>{
-        welcome,
-        login,
-        register,
-        phoneLogin,
-      };
+      const publicRoutes = <String>{welcome, login, register, phoneLogin};
 
       final publicPage = publicRoutes.contains(path);
 
-      debugPrint(
-        '[ROUTER] path=$path, loggedIn=$loggedIn',
-      );
+      debugPrint('[ROUTER] path=$path, loggedIn=$loggedIn');
 
       // Người chưa đăng nhập không được vào Home.
       if (!loggedIn && !publicPage) {
@@ -122,92 +108,77 @@ class AppRouter {
     routes: [
       GoRoute(
         path: welcome,
-        builder: (context, state) =>
-        const WelcomeScreen(),
+        builder: (context, state) => const WelcomeScreen(),
       ),
 
-      GoRoute(
-        path: login,
-        builder: (context, state) =>
-        const LoginScreen(),
-      ),
+      GoRoute(path: login, builder: (context, state) => const LoginScreen()),
 
       GoRoute(
         path: register,
-        builder: (context, state) =>
-        const RegisterScreen(),
+        builder: (context, state) => const RegisterScreen(),
       ),
 
       GoRoute(
         path: phoneLogin,
-        builder: (context, state) =>
-        const PhoneLoginScreen(),
+        builder: (context, state) => const PhoneLoginScreen(),
       ),
 
-      GoRoute(
-        path: home,
-        builder: (context, state) =>
-        const HomeScreen(),
-      ),
+      GoRoute(path: home, builder: (context, state) => const HomeScreen()),
 
       GoRoute(
         path: addExpense,
-        builder: (context, state) =>
-        const AddExpenseScreen(),
+        builder: (context, state) => const AddExpenseScreen(),
       ),
 
       GoRoute(
         path: notifications,
-        builder: (context, state) =>
-        const NotificationScreen(),
+        builder: (context, state) => const NotificationScreen(),
       ),
 
       GoRoute(
         path: profile,
-        builder: (context, state) =>
-        const ProfileScreen(),
+        builder: (context, state) => const ProfileScreen(),
       ),
 
       GoRoute(
         path: wallets,
-        builder: (context, state) =>
-        const WalletsScreen(),
+        builder: (context, state) => const WalletsScreen(),
       ),
 
       GoRoute(
         path: categories,
-        builder: (context, state) =>
-        const CategoriesScreen(),
+        builder: (context, state) => const CategoriesScreen(),
       ),
 
       GoRoute(
         path: setBudget,
-        builder: (context, state) =>
-        const SetBudgetScreen(),
+        builder: (context, state) {
+          final extra = state.extra;
+
+          return SetBudgetScreen(
+            initialMonth: extra is DateTime ? extra : null,
+          );
+        },
       ),
 
       GoRoute(
         path: calendar,
-        builder: (context, state) =>
-        const CalendarScreen(),
+        builder: (context, state) => const CalendarScreen(),
       ),
 
       GoRoute(
         path: statistic,
-        builder: (context, state) =>
-        const StatisticScreen(),
+        builder: (context, state) => const StatisticScreen(),
       ),
 
       GoRoute(
         path: transactions,
-        builder: (context, state) =>
-        const TransactionListScreen(),
+        builder: (context, state) => const TransactionListScreen(),
       ),
 
       GoRoute(
         path: editProfile,
-        builder: (context, state) =>
-        const EditProfileScreen(),
+        builder: (context, state) => const EditProfileScreen(),
       ),
 
       GoRoute(
@@ -215,52 +186,38 @@ class AppRouter {
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
 
-          return TransactionDetailScreen(
-            transactionId: id,
-          );
+          return TransactionDetailScreen(transactionId: id);
         },
+      ),
+      GoRoute(
+        path: monthSummary,
+        builder: (context, state) => const MonthSummaryScreen(),
       ),
     ],
 
     errorBuilder: (context, state) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Không tìm thấy trang'),
-        ),
+        appBar: AppBar(title: const Text('Không tìm thấy trang')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 54,
-                  color: Colors.orange,
-                ),
+                const Icon(Icons.error_outline, size: 54, color: Colors.orange),
                 const SizedBox(height: 16),
                 const Text(
                   'Không thể mở trang này',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Đường dẫn: ${state.uri}',
-                  textAlign: TextAlign.center,
-                ),
+                Text('Đường dẫn: ${state.uri}', textAlign: TextAlign.center),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: () {
-                    final loggedIn =
-                        FirebaseAuth.instance.currentUser !=
-                            null;
+                    final loggedIn = FirebaseAuth.instance.currentUser != null;
 
-                    context.go(
-                      loggedIn ? home : login,
-                    );
+                    context.go(loggedIn ? home : login);
                   },
                   child: const Text('Quay lại'),
                 ),

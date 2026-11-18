@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_colors.dart';
 import '../widgets/finance_ui.dart';
+import '../services/local_notification_service.dart';
 
 class SetBudgetScreen extends StatefulWidget {
-  const SetBudgetScreen({super.key});
+  final DateTime? initialMonth;
+  const SetBudgetScreen({super.key, this.initialMonth});
 
   @override
   State<SetBudgetScreen> createState() => _SetBudgetScreenState();
@@ -17,10 +19,14 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _monthlyGoalController = TextEditingController();
 
+  bool _loadingMonthlyGoal = false;
+  bool _savingMonthlyGoal = false;
+  bool _notifyAt90 = true;
   String? _categoryId;
 
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  late DateTime _selectedMonth;
 
   bool _saving = false;
 
@@ -34,8 +40,19 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+
+    final month = widget.initialMonth ?? DateTime.now();
+    _selectedMonth = DateTime(month.year, month.month);
+
+    _loadMonthlyGoal();
+  }
+
+  @override
   void dispose() {
     _amountController.dispose();
+    _monthlyGoalController.dispose();
     super.dispose();
   }
 
@@ -89,7 +106,7 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
   // ==========================================
 
   void _changeMonth(int offset) {
-    if (_saving) return;
+    if (_saving || _savingMonthlyGoal) return;
 
     setState(() {
       _selectedMonth = DateTime(
@@ -97,6 +114,7 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
         _selectedMonth.month + offset,
       );
     });
+    _loadMonthlyGoal();
   }
 
   Future<void> _pickMonth() async {
@@ -115,11 +133,127 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
     setState(() {
       _selectedMonth = DateTime(picked.year, picked.month);
     });
+    _loadMonthlyGoal();
   }
 
   // ==========================================
   // 3. LƯU NGÂN SÁCH
   // ==========================================
+  String get _monthlyGoalId {
+    final year = _selectedMonth.year;
+    final month = _selectedMonth.month.toString().padLeft(2, '0');
+
+    return '${year}_$month';
+  }
+
+  Future<void> _loadMonthlyGoal() async {
+    final userRef = _userRef;
+    if (userRef == null) return;
+
+    final goalId = _monthlyGoalId;
+
+    setState(() {
+      _loadingMonthlyGoal = true;
+      _monthlyGoalController.clear();
+    });
+
+    try {
+      final snapshot = await userRef
+          .collection('monthly_budget_totals')
+          .doc(goalId)
+          .get();
+
+      if (!mounted || goalId != _monthlyGoalId) return;
+
+      final data = snapshot.data();
+
+      _monthlyGoalController.text = _toAmount(data?['amount']) == 0
+          ? ''
+          : _toAmount(data?['amount']).toString();
+
+      setState(() {
+        _notifyAt90 = data?['notifyAt90'] as bool? ?? true;
+      });
+    } catch (error) {
+      _message('Không tải được mục tiêu tháng: $error');
+    } finally {
+      if (mounted && goalId == _monthlyGoalId) {
+        setState(() => _loadingMonthlyGoal = false);
+      }
+    }
+  }
+
+  Future<void> _saveMonthlyGoal() async {
+    final uid = _uid;
+    final userRef = _userRef;
+
+    if (userRef == null) {
+      _message('Vui lòng đăng nhập.');
+      return;
+    }
+
+    final amount = int.tryParse(
+      _monthlyGoalController.text.trim().replaceAll(' ', ''),
+    );
+
+    if (amount == null || amount <= 0) {
+      _message('Mục tiêu tháng phải lớn hơn 0.');
+      return;
+    }
+
+    setState(() => _savingMonthlyGoal = true);
+
+    try {
+      await userRef.collection('monthly_budget_totals').doc(_monthlyGoalId).set(
+        {
+          'year': _selectedMonth.year,
+          'month': _selectedMonth.month,
+          'amount': amount,
+          'notifyAt90': _notifyAt90,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'id': _monthlyGoalId,
+          'userId': uid,
+        },
+      );
+
+      if (_notifyAt90) {
+        final permissionGranted =
+            await LocalNotificationService.requestPermission();
+
+        if (!mounted) return;
+
+        _message(
+          permissionGranted
+              ? 'Đã lưu mục tiêu. Quyền thông báo đã được cấp.'
+              : 'Đã lưu mục tiêu, nhưng quyền thông báo chưa được cấp.',
+        );
+      } else {
+        _message('Đã lưu mục tiêu tháng. Cảnh báo 90% đang tắt.');
+      }
+    } on FirebaseException catch (error) {
+      _message('Không lưu được mục tiêu: ${error.message ?? error.code}');
+    } catch (error) {
+      _message('Không lưu được mục tiêu: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _savingMonthlyGoal = false);
+      }
+    }
+  }
+
+  int _allocatedAmount(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> budgets,
+  ) {
+    return budgets
+        .where((doc) {
+          final data = doc.data();
+
+          return _toAmount(data['year']) == _selectedMonth.year &&
+              _toAmount(data['month']) == _selectedMonth.month &&
+              (data['categoryId']?.toString().isNotEmpty ?? false);
+        })
+        .fold<int>(0, (total, doc) => total + _toAmount(doc.data()['amount']));
+  }
 
   Future<void> _saveBudget(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> categories,
@@ -335,9 +469,105 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
   // ==========================================
   // 7. FORM THIẾT LẬP NGÂN SÁCH
   // ==========================================
+  Widget _monthlyGoalSection(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> budgets,
+  ) {
+    final goal =
+        int.tryParse(_monthlyGoalController.text.trim().replaceAll(' ', '')) ??
+        0;
+    final allocated = _allocatedAmount(budgets);
+    final remaining = goal - allocated;
+
+    return FinanceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Mục tiêu tổng tháng',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _monthlyGoalController,
+            enabled: !_loadingMonthlyGoal && !_savingMonthlyGoal,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'Ví dụ: 5000000',
+              suffixText: 'VNĐ',
+              prefixIcon: Icon(Icons.flag_outlined),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            children: [3000000, 5000000, 7000000].map((amount) {
+              return ActionChip(
+                label: Text('${amount ~/ 1000000} triệu'),
+                onPressed: _loadingMonthlyGoal || _savingMonthlyGoal
+                    ? null
+                    : () {
+                        setState(() {
+                          _monthlyGoalController.text = amount.toString();
+                        });
+                      },
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          Text('Đã chia cho danh mục: ${formatVnd(allocated)}'),
+          const SizedBox(height: 4),
+          Text(
+            remaining >= 0
+                ? 'Còn lại: ${formatVnd(remaining)}'
+                : 'Đã chia vượt mục tiêu: ${formatVnd(-remaining)}',
+            style: TextStyle(
+              color: remaining < 0
+                  ? AppColors.expense
+                  : AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Cảnh báo khi đạt 90% ngân sách'),
+            subtitle: const Text('Lưu lựa chọn cùng mục tiêu tháng'),
+            value: _notifyAt90,
+            onChanged: _loadingMonthlyGoal || _savingMonthlyGoal
+                ? null
+                : (value) {
+                    setState(() {
+                      _notifyAt90 = value;
+                    });
+                  },
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _loadingMonthlyGoal || _savingMonthlyGoal
+                  ? null
+                  : _saveMonthlyGoal,
+              child: _savingMonthlyGoal
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Lưu mục tiêu tháng'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _budgetForm(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> categories,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> budgets,
   ) {
     final availableCategories = categories
         .where((doc) => doc.data()['type'] == 'expense')
@@ -353,6 +583,8 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _monthlyGoalSection(budgets),
+          const SizedBox(height: 18),
           const Text('Danh mục', style: TextStyle(fontWeight: FontWeight.w600)),
 
           const SizedBox(height: 8),
@@ -496,7 +728,7 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
     final remaining = limit - spent;
 
     final isOver = spent > limit;
-    final isWarning = spent >= limit * 0.8 && !isOver;
+    final isWarning = spent * 10 >= limit * 9 && !isOver;
 
     final Color progressColor;
 
@@ -633,7 +865,7 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
               else if (isWarning)
                 const Text(
                   'Cảnh báo: Đã sử dụng ít nhất '
-                  '80% ngân sách.',
+                  '90% ngân sách.', // <--- Sửa thành 90%
                   style: TextStyle(
                     color: Color(0xFFFF9800),
                     fontWeight: FontWeight.w600,
@@ -805,7 +1037,7 @@ class _SetBudgetScreenState extends State<SetBudgetScreen> {
 
                         const SizedBox(height: 12),
 
-                        _budgetForm(categories),
+                        _budgetForm(categories, budgets),
 
                         const SizedBox(height: 24),
 

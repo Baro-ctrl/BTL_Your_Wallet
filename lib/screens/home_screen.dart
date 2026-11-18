@@ -374,6 +374,12 @@ class HomeScreen extends StatelessWidget {
                 ),
                 _quickAction(
                   context,
+                  Icons.summarize,
+                  'Tổng kết',
+                  AppRouter.monthSummary,
+                ),
+                _quickAction(
+                  context,
                   Icons.receipt_long,
                   'Giao dịch',
                   AppRouter.transactions,

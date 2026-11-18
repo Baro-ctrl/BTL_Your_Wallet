@@ -27,6 +27,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
     return _db.collection('users').doc(uid);
   }
 
+  String _monthlyGoalId(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    return '${date.year}_$month';
+  }
   // ==========================================
   // 1. HÀM HỖ TRỢ
   // ==========================================
@@ -155,8 +159,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   List<_WalletNotice> _budgetNotices(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> budgets,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions,
-  ) {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> transactions, {
+    required bool notifyAt90,
+  }) {
+    if (!notifyAt90) return [];
     final now = DateTime.now();
     final spending = <String, int>{};
 
@@ -201,7 +207,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final spent = spending[categoryId] ?? 0;
       final ratio = spent / limit;
 
-      if (ratio < 0.8) continue;
+      if (ratio < 0.9) continue;
 
       final name = data['name']?.toString() ?? 'Danh mục';
 
@@ -430,7 +436,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     required List<_WalletNotice> transactions,
     required List<_WalletNotice> budgets,
   }) {
-    final notices = [...budgets, ...saved, ...transactions];
+    final savedIds = saved.map((notice) => notice.id).toSet();
+
+    final notices = [
+      ...budgets.where((notice) => !savedIds.contains(notice.id)),
+      ...saved,
+      ...transactions,
+    ];
 
     notices.sort((a, b) {
       if (a.priority != b.priority) {
@@ -539,30 +551,61 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: userRef.collection('notifications').snapshots(),
-                  builder: (context, noticeSnapshot) {
-                    if (noticeSnapshot.hasError) {
+                final now = DateTime.now();
+
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: userRef
+                      .collection('monthly_budget_totals')
+                      .doc(_monthlyGoalId(now))
+                      .snapshots(),
+                  builder: (context, monthlyGoalSnapshot) {
+                    if (monthlyGoalSnapshot.hasError) {
                       return Center(
                         child: Text(
-                          'Lỗi tải thông báo: '
-                          '${noticeSnapshot.error}',
+                          'Lỗi tải lựa chọn cảnh báo: '
+                          '${monthlyGoalSnapshot.error}',
                           textAlign: TextAlign.center,
                         ),
                       );
                     }
 
-                    if (!noticeSnapshot.hasData) {
+                    if (!monthlyGoalSnapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    return _buildNoticeList(
-                      saved: _savedNotices(noticeSnapshot.data!.docs),
-                      transactions: _transactionNotices(transactionDocs),
-                      budgets: _budgetNotices(
-                        budgetSnapshot.data!.docs,
-                        transactionDocs,
-                      ),
+                    final notifyAt90 =
+                        monthlyGoalSnapshot.data!.data()?['notifyAt90']
+                            as bool? ??
+                        true;
+
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: userRef.collection('notifications').snapshots(),
+                      builder: (context, noticeSnapshot) {
+                        if (noticeSnapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Lỗi tải thông báo: ${noticeSnapshot.error}',
+                              textAlign: TextAlign.center,
+                            ),
+                          );
+                        }
+
+                        if (!noticeSnapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        return _buildNoticeList(
+                          saved: _savedNotices(noticeSnapshot.data!.docs),
+                          transactions: _transactionNotices(transactionDocs),
+                          budgets: _budgetNotices(
+                            budgetSnapshot.data!.docs,
+                            transactionDocs,
+                            notifyAt90: notifyAt90,
+                          ),
+                        );
+                      },
                     );
                   },
                 );

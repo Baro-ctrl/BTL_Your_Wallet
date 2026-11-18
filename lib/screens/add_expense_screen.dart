@@ -8,6 +8,8 @@ import '../app/app_router.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_bottom_nav.dart';
+import '../services/local_notification_service.dart';
+import '../widgets/finance_ui.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   const AddExpenseScreen({super.key});
@@ -335,6 +337,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
         transaction.update(walletRef, {'balance': newBalance});
       });
+      if (_type == 'expense') {
+        await _notifyIfBudgetThresholdCrossed(
+          userRef: userRef,
+          categoryId: categoryId,
+          categoryName: categoryName,
+          addedAmount: amount,
+          transactionDate: _selectedDate,
+        );
+      }
 
       debugPrint(
         '[ADD_TRANSACTION] Saved: '
@@ -375,6 +386,115 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           _saving = false;
         });
       }
+    }
+  }
+
+  Future<void> _notifyIfBudgetThresholdCrossed({
+    required DocumentReference<Map<String, dynamic>> userRef,
+    required String categoryId,
+    required String categoryName,
+    required int addedAmount,
+    required DateTime transactionDate,
+  }) async {
+    try {
+      final now = DateTime.now();
+
+      // Chỉ cảnh báo cho giao dịch thuộc tháng hiện tại.
+      if (transactionDate.year != now.year ||
+          transactionDate.month != now.month) {
+        return;
+      }
+
+      final year = transactionDate.year;
+      final month = transactionDate.month.toString().padLeft(2, '0');
+
+      // Các mã tài liệu phải khớp với cách SetBudget lưu dữ liệu.
+      final budgetId = '${categoryId}_${year}_$month';
+      final monthlyGoalId = '${year}_$month';
+
+      final budgetSnapshot = await userRef
+          .collection('budgets')
+          .doc(budgetId)
+          .get();
+
+      final goalSnapshot = await userRef
+          .collection('monthly_budget_totals')
+          .doc(monthlyGoalId)
+          .get();
+
+      // Chỉ gửi cảnh báo nếu người dùng đã bật công tắc 90% và lưu mục tiêu.
+      if (goalSnapshot.data()?['notifyAt90'] != true) return;
+      if (!budgetSnapshot.exists) return;
+
+      final limit = _readAmount(budgetSnapshot.data()?['amount']);
+      if (limit <= 0) return;
+
+      // Lấy các giao dịch sau khi giao dịch mới đã được lưu.
+      final transactionsSnapshot = await userRef
+          .collection('transactions')
+          .get();
+
+      var spentAfter = 0;
+
+      for (final doc in transactionsSnapshot.docs) {
+        final data = doc.data();
+
+        if (data['type'] != 'expense' || data['categoryId'] != categoryId) {
+          continue;
+        }
+
+        final rawDate = data['date'];
+        final date = rawDate is Timestamp ? rawDate.toDate() : null;
+
+        if (date == null || date.year != year || date.month != now.month) {
+          continue;
+        }
+
+        spentAfter += _readAmount(data['amount']);
+      }
+
+      // Giao dịch vừa lưu đã nằm trong spentAfter, nên trừ nó để tính mức trước đó.
+      final spentBefore = spentAfter - addedAmount;
+
+      final reached90 =
+          spentBefore * 10 < limit * 9 && spentAfter * 10 >= limit * 9;
+      final crossedLimit = spentBefore <= limit && spentAfter > limit;
+
+      if (!reached90 && !crossedLimit) return;
+
+      final isOver = spentAfter > limit;
+      final percent = (spentAfter * 100 / limit).round();
+
+      final title = isOver
+          ? 'Đã vượt ngân sách $categoryName'
+          : 'Sắp đạt giới hạn $categoryName';
+
+      final message = isOver
+          ? 'Đã chi ${formatVnd(spentAfter)} trên hạn mức ${formatVnd(limit)}.'
+          : 'Đã sử dụng $percent% hạn mức $categoryName.';
+
+      await LocalNotificationService.showBudgetWarning(
+        id: budgetId.hashCode & 0x7fffffff,
+        title: title,
+        message: message,
+      );
+
+      final noticeId = 'budget_$budgetId';
+
+      await userRef.collection('notifications').doc(noticeId).set({
+        'id': noticeId,
+        'userId': userRef.id,
+        'title': title,
+        'message': message,
+        'type': 'budget_warning',
+        'isRead': false,
+        'budgetId': budgetId,
+        'categoryId': categoryId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      // Giao dịch đã được lưu; lỗi cảnh báo không được làm báo nhầm là lưu giao dịch thất bại.
+      debugPrint('[BUDGET_NOTIFICATION] Không gửi được cảnh báo: $error');
     }
   }
 

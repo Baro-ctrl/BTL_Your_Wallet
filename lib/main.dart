@@ -1,10 +1,10 @@
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'app/app_router.dart';
 import 'theme/app_theme.dart';
+import 'services/local_notification_service.dart';
 
 // ==========================================
 // 1. KHỞI ĐỘNG ỨNG DỤNG
@@ -20,16 +20,17 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    try {
+      await LocalNotificationService.initialize();
+    } catch (error) {
+      debugPrint('[LOCAL_NOTIFICATIONS] Khởi tạo thất bại: $error');
+    }
 
     // Firebase thành công -> chạy ứng dụng.
     runApp(const MyApp());
   } catch (error) {
     // Firebase thất bại -> hiển thị màn báo lỗi.
-    runApp(
-      FirebaseErrorApp(
-        errorMessage: error.toString(),
-      ),
-    );
+    runApp(FirebaseErrorApp(errorMessage: error.toString()));
   }
 }
 
@@ -73,10 +74,7 @@ class MyApp extends StatelessWidget {
 class FirebaseErrorApp extends StatelessWidget {
   final String errorMessage;
 
-  const FirebaseErrorApp({
-    super.key,
-    required this.errorMessage,
-  });
+  const FirebaseErrorApp({super.key, required this.errorMessage});
 
   @override
   Widget build(BuildContext context) {
@@ -85,24 +83,17 @@ class FirebaseErrorApp extends StatelessWidget {
       title: 'Your Wallet',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4096F5),
-        ),
-        scaffoldBackgroundColor:
-        const Color(0xFFF4F8FF),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4096F5)),
+        scaffoldBackgroundColor: const Color(0xFFF4F8FF),
       ),
       home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Your Wallet'),
-          centerTitle: true,
-        ),
+        appBar: AppBar(title: const Text('Your Wallet'), centerTitle: true),
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
-                constraints:
-                const BoxConstraints(maxWidth: 430),
+                constraints: const BoxConstraints(maxWidth: 430),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -112,8 +103,7 @@ class FirebaseErrorApp extends StatelessWidget {
                       height: 96,
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFEBEE),
-                        borderRadius:
-                        BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                       child: const Icon(
                         Icons.cloud_off_rounded,
@@ -137,8 +127,8 @@ class FirebaseErrorApp extends StatelessWidget {
 
                     const Text(
                       'Ứng dụng chưa khởi tạo được Firebase. '
-                          'Vui lòng kiểm tra cấu hình Firebase '
-                          'và kết nối mạng.',
+                      'Vui lòng kiểm tra cấu hình Firebase '
+                      'và kết nối mạng.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -155,11 +145,8 @@ class FirebaseErrorApp extends StatelessWidget {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius:
-                        BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(0xFFE0E6EF),
-                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE0E6EF)),
                       ),
                       child: SelectableText(
                         errorMessage,
@@ -185,12 +172,9 @@ class FirebaseErrorApp extends StatelessWidget {
 
                     const Text(
                       'Your Wallet - Quản lý chi tiêu '
-                          'thông minh',
+                      'thông minh',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black45,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.black45),
                     ),
                   ],
                 ),
